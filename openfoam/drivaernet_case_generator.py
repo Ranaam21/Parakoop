@@ -487,7 +487,7 @@ echo '[decomposePar]'
 decomposePar -force > log.decomposePar 2>&1 && echo '  done' || {{ tail -5 log.decomposePar; exit 1; }}
 
 echo '[simpleFoam parallel ({n_procs} procs)]'
-mpirun -np {n_procs} simpleFoam -parallel > log.simpleFoam 2>&1 && echo '  done' || {{ tail -10 log.simpleFoam; exit 1; }}
+mpirun --allow-run-as-root -np {n_procs} simpleFoam -parallel > log.simpleFoam 2>&1 && echo '  done' || {{ tail -10 log.simpleFoam; exit 1; }}
 
 echo '[reconstructPar]'
 reconstructPar -latestTime > log.reconstructPar 2>&1 && echo '  done' || true
