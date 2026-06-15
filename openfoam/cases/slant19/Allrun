@@ -1,0 +1,28 @@
+#!/bin/bash
+# ParaKoop Ahmed body validation case
+# Geometry: L=900mm H=288mm W=389mm
+#           slant=18.6° ground=50mm
+# Flow:     U∞=40.0m/s  Re=2.37e+06  ν=1.516e-05m²/s
+# Solver:   simpleFoam k-ω SST
+
+cd "$(dirname "$0")"
+
+# 1. Mesh the outer domain
+blockMesh 2>&1 | tee log.blockMesh
+
+# 2. Copy STL to constant/triSurface (generate ahmed_body.stl first)
+mkdir -p constant/triSurface
+[ -f ahmed_body.stl ] && cp ahmed_body.stl constant/triSurface/ || \
+    echo "WARNING: ahmed_body.stl not found — generate with generate_ahmed_stl.py first"
+
+# 3. Surface feature extraction + snappy meshing
+surfaceFeatureExtract  2>&1 | tee log.surfaceFeatureExtract
+snappyHexMesh -overwrite 2>&1 | tee log.snappyHexMesh
+
+# 4. Run simpleFoam
+simpleFoam 2>&1 | tee log.simpleFoam
+
+# 5. Extract Cd/Cl from force coefficients
+grep "Cd" postProcessing/forceCoeffs/0/forceCoeffs.dat | tail -5
+echo "---"
+echo "ParaKoop predicted Cd: N/A  Cl: N/A"

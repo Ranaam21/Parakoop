@@ -1,0 +1,12 @@
+{
+  "length_mm": 900.0,
+  "height_mm": 288.0,
+  "width_mm": 389.0,
+  "slant_deg": 14.8,
+  "ground_clr_mm": 50.0,
+  "Re": 2374670.18469657,
+  "U_inf_ms": 40.0,
+  "frontal_area_m2": 0.11203199999999999,
+  "pk_cd_pred": 0.2848,
+  "pk_cl_pred": 0.1948
+}

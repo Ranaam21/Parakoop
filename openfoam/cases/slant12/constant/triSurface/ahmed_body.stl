@@ -1,0 +1,128 @@
+solid ahmed_body
+  facet normal 0.000000 0.000000 1.000000
+    outer loop
+      vertex 0.000000 -0.194500 0.050000
+      vertex 0.900000 -0.194500 0.050000
+      vertex 0.900000 0.194500 0.050000
+    endloop
+  endfacet
+  facet normal 0.000000 0.000000 1.000000
+    outer loop
+      vertex 0.000000 -0.194500 0.050000
+      vertex 0.900000 0.194500 0.050000
+      vertex 0.000000 0.194500 0.050000
+    endloop
+  endfacet
+  facet normal 0.000000 0.000000 1.000000
+    outer loop
+      vertex 0.000000 -0.194500 0.338000
+      vertex 0.618398 -0.194500 0.338000
+      vertex 0.618398 0.194500 0.338000
+    endloop
+  endfacet
+  facet normal 0.000000 0.000000 1.000000
+    outer loop
+      vertex 0.000000 -0.194500 0.338000
+      vertex 0.618398 0.194500 0.338000
+      vertex 0.000000 0.194500 0.338000
+    endloop
+  endfacet
+  facet normal 1.000000 0.000000 0.000000
+    outer loop
+      vertex 0.000000 -0.194500 0.050000
+      vertex 0.000000 0.194500 0.050000
+      vertex 0.000000 0.194500 0.338000
+    endloop
+  endfacet
+  facet normal 1.000000 0.000000 0.000000
+    outer loop
+      vertex 0.000000 -0.194500 0.050000
+      vertex 0.000000 0.194500 0.338000
+      vertex 0.000000 -0.194500 0.338000
+    endloop
+  endfacet
+  facet normal 0.000000 1.000000 0.000000
+    outer loop
+      vertex 0.000000 -0.194500 0.050000
+      vertex 0.000000 -0.194500 0.338000
+      vertex 0.618398 -0.194500 0.338000
+    endloop
+  endfacet
+  facet normal 0.000000 1.000000 0.000000
+    outer loop
+      vertex 0.000000 -0.194500 0.050000
+      vertex 0.618398 -0.194500 0.338000
+      vertex 0.618398 -0.194500 0.050000
+    endloop
+  endfacet
+  facet normal -0.348855 0.937177 0.000000
+    outer loop
+      vertex 0.618398 -0.194500 0.338000
+      vertex 0.900000 -0.089677 0.277630
+      vertex 0.900000 -0.089677 0.050000
+    endloop
+  endfacet
+  facet normal -0.348855 0.937177 0.000000
+    outer loop
+      vertex 0.618398 -0.194500 0.338000
+      vertex 0.900000 -0.089677 0.050000
+      vertex 0.618398 -0.194500 0.050000
+    endloop
+  endfacet
+  facet normal 0.000000 -1.000000 0.000000
+    outer loop
+      vertex 0.000000 0.194500 0.050000
+      vertex 0.618398 0.194500 0.050000
+      vertex 0.618398 0.194500 0.338000
+    endloop
+  endfacet
+  facet normal 0.000000 -1.000000 0.000000
+    outer loop
+      vertex 0.000000 0.194500 0.050000
+      vertex 0.618398 0.194500 0.338000
+      vertex 0.000000 0.194500 0.338000
+    endloop
+  endfacet
+  facet normal -0.348855 -0.937177 0.000000
+    outer loop
+      vertex 0.618398 0.194500 0.050000
+      vertex 0.900000 0.089677 0.050000
+      vertex 0.900000 0.089677 0.277630
+    endloop
+  endfacet
+  facet normal -0.348855 -0.937177 0.000000
+    outer loop
+      vertex 0.618398 0.194500 0.050000
+      vertex 0.900000 0.089677 0.277630
+      vertex 0.618398 0.194500 0.338000
+    endloop
+  endfacet
+  facet normal -0.209619 0.000000 -0.977783
+    outer loop
+      vertex 0.618398 -0.194500 0.338000
+      vertex 0.618398 0.194500 0.338000
+      vertex 0.900000 0.089677 0.277630
+    endloop
+  endfacet
+  facet normal -0.209619 0.000000 -0.977783
+    outer loop
+      vertex 0.618398 -0.194500 0.338000
+      vertex 0.900000 0.089677 0.277630
+      vertex 0.900000 -0.089677 0.277630
+    endloop
+  endfacet
+  facet normal 1.000000 0.000000 0.000000
+    outer loop
+      vertex 0.900000 -0.089677 0.050000
+      vertex 0.900000 0.089677 0.050000
+      vertex 0.900000 0.089677 0.277630
+    endloop
+  endfacet
+  facet normal 1.000000 0.000000 0.000000
+    outer loop
+      vertex 0.900000 -0.089677 0.050000
+      vertex 0.900000 0.089677 0.277630
+      vertex 0.900000 -0.089677 0.277630
+    endloop
+  endfacet
+endsolid ahmed_body

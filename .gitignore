@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Data — too large for GitHub (486GB)
+data/
+
+# Model checkpoints — regenerate with train_unified.py
+checkpoints/
+
+# OpenFOAM case outputs — generated at runtime
+openfoam/cases/*/log.*
+openfoam/cases/*/postProcessing/
+openfoam/cases/*/constant/polyMesh/boundary
+openfoam/cases/*/constant/polyMesh/faces
+openfoam/cases/*/constant/polyMesh/neighbour
+openfoam/cases/*/constant/polyMesh/owner
+openfoam/cases/*/constant/polyMesh/points
+openfoam/cases/*/constant/polyMesh/cellLevel
+openfoam/cases/*/constant/polyMesh/pointLevel
+openfoam/cases/*/constant/polyMesh/cellZones
+openfoam/cases/*/constant/polyMesh/faceZones
+openfoam/cases/*/constant/polyMesh/pointZones
+openfoam/cases/*/constant/polyMesh/refinementHistory
+openfoam/cases/*/constant/polyMesh/surfaceIndex
+openfoam/cases/*/constant/polyMesh/level0Edge
+openfoam/cases/*/constant/extendedFeatureEdgeMesh/
+openfoam/cases/*/constant/triSurface/*.obj
+openfoam/cases/*/processor*/
+openfoam/cases/*/[0-9]*/
+
+# Results CSVs — generated at runtime
+results/*.csv
+
+# VTU cache
+results/vtu_wake_metrics.csv
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+*.swp
