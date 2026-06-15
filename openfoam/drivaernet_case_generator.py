@@ -230,7 +230,8 @@ boundaryField
 
 def _transport_props() -> str:
     return _header('dictionary', 'constant', 'transportProperties') + f"""\
-nu          {NU};
+transportModel  Newtonian;
+nu              {NU};
 """
 
 
