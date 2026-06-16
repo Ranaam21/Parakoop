@@ -152,8 +152,8 @@ boundaryField
     outlet      {{ type zeroGradient; }}
     top         {{ type symmetry; }}
     sides       {{ type symmetry; }}
-    ground      {{ type fixedValue; value uniform ({U_INF} 0 0); }}  // moving road
-    car_body    {{ type noSlip; }}
+    ground          {{ type fixedValue; value uniform ({U_INF} 0 0); }}  // moving road
+    "car_body_.*"   {{ type noSlip; }}
 }}
 """
 
@@ -169,8 +169,8 @@ boundaryField
     outlet      { type fixedValue; value uniform 0; }
     top         { type symmetry; }
     sides       { type symmetry; }
-    ground      { type zeroGradient; }
-    car_body    { type zeroGradient; }
+    ground          { type zeroGradient; }
+    "car_body_.*"   { type zeroGradient; }
 }
 """
 
@@ -187,8 +187,8 @@ boundaryField
     outlet      {{ type zeroGradient; }}
     top         {{ type symmetry; }}
     sides       {{ type symmetry; }}
-    ground      {{ type kqRWallFunction; value uniform {k:.6f}; }}
-    car_body    {{ type kqRWallFunction; value uniform {k:.6f}; }}
+    ground          {{ type kqRWallFunction; value uniform {k:.6f}; }}
+    "car_body_.*"   {{ type kqRWallFunction; value uniform {k:.6f}; }}
 }}
 """
 
@@ -205,8 +205,8 @@ boundaryField
     outlet      {{ type zeroGradient; }}
     top         {{ type symmetry; }}
     sides       {{ type symmetry; }}
-    ground      {{ type omegaWallFunction; value uniform {om:.4f}; }}
-    car_body    {{ type omegaWallFunction; value uniform {om:.4f}; }}
+    ground          {{ type omegaWallFunction; value uniform {om:.4f}; }}
+    "car_body_.*"   {{ type omegaWallFunction; value uniform {om:.4f}; }}
 }}
 """
 
@@ -222,8 +222,8 @@ boundaryField
     outlet      { type calculated; value uniform 0; }
     top         { type symmetry; }
     sides       { type symmetry; }
-    ground      { type nutkWallFunction; value uniform 0; }
-    car_body    { type nutkWallFunction; value uniform 0; }
+    ground          { type nutkWallFunction; value uniform 0; }
+    "car_body_.*"   { type nutkWallFunction; value uniform 0; }
 }
 """
 
@@ -266,7 +266,7 @@ functions
         writeControl    timeStep;
         writeInterval   10;
         log             true;
-        patches         (car_body);
+        patches         ("car_body_.*");
         rho             rhoInf;
         rhoInf          {RHO};
         liftDir         (0 0 1);
@@ -405,7 +405,7 @@ addLayersControls
     relativeSizes       true;
     layers
     {{
-        car_body {{ nSurfaceLayers 5; }}
+        "car_body_.*" {{ nSurfaceLayers 5; }}
         ground   {{ nSurfaceLayers 3; }}
     }}
     expansionRatio          1.2;
