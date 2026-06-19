@@ -155,33 +155,68 @@ st.markdown(f"""
     color: {WHITE} !important;
   }}
 
-  /* ── Custom CSS tooltip for HTML elements ── */
-  .pk-tip {{ position: relative; display: block; }}
-  .pk-tip-inner {{ cursor: help; }}
-  .pk-tip::after {{
-    content: attr(data-tip);
-    display: none;
-    position: absolute;
-    bottom: calc(100% + 8px);
-    left: 50%;
-    transform: translateX(-50%);
-    background: {PANEL};
-    color: {WHITE};
-    border: 1px solid #30363d;
-    border-radius: 8px;
-    padding: 10px 14px;
-    font-size: 12px;
-    white-space: pre-wrap;
-    min-width: 230px;
-    max-width: 340px;
-    z-index: 9999;
-    pointer-events: none;
-    line-height: 1.55;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
-  }}
-  .pk-tip:hover::after {{ display: block; }}
+  /* .pk-tip base — tooltip is now JS-driven (position:fixed on body) */
+  .pk-tip {{ display: block; cursor: help; }}
 </style>
 """, unsafe_allow_html=True)
+
+# ── JS floating tooltip (bypasses Streamlit overflow:hidden on all containers) ──
+import streamlit.components.v1 as _v1
+_v1.html("""<script>
+(function(){
+  var doc = window.parent.document;
+
+  // Create one shared floating tip div appended to <body>
+  var tip = doc.getElementById('pk-float-tip');
+  if (!tip) {
+    tip = doc.createElement('div');
+    tip.id = 'pk-float-tip';
+    tip.style.cssText = [
+      'display:none','position:fixed','background:#21262d','color:#e6edf3',
+      'border:1px solid #30363d','border-radius:8px','padding:10px 14px',
+      'font-size:12px','white-space:pre-wrap','min-width:220px','max-width:340px',
+      'z-index:2147483647','pointer-events:none','line-height:1.6',
+      'box-shadow:0 4px 18px rgba(0,0,0,0.6)'
+    ].join(';');
+    doc.body.appendChild(tip);
+  }
+
+  function decode(s) {
+    return s.replace(/&#10;/g,'\n').replace(/&quot;/g,'"')
+            .replace(/&amp;/g,'&').replace(/&#39;/g,"'");
+  }
+
+  function position(e) {
+    var x = e.clientX + 14, y = e.clientY - 12;
+    var tw = tip.offsetWidth || 280, th = tip.offsetHeight || 120;
+    if (x + tw > window.parent.innerWidth)  x = e.clientX - tw - 14;
+    if (y + th > window.parent.innerHeight) y = e.clientY - th - 14;
+    tip.style.left = x + 'px';
+    tip.style.top  = y + 'px';
+  }
+
+  function attach(el) {
+    if (el.__pkTip) return;
+    el.__pkTip = true;
+    el.addEventListener('mouseenter', function(e) {
+      var d = el.getAttribute('data-tip');
+      if (!d) return;
+      tip.textContent = decode(d);
+      tip.style.display = 'block';
+      position(e);
+    });
+    el.addEventListener('mousemove', position);
+    el.addEventListener('mouseleave', function() { tip.style.display = 'none'; });
+  }
+
+  function scan() {
+    doc.querySelectorAll('[data-tip]').forEach(attach);
+  }
+
+  scan();
+  new MutationObserver(scan).observe(doc.body, {childList:true, subtree:true});
+})();
+</script>""", height=0)
 
 # ── Header ────────────────────────────────────────────────────────────────────
 
