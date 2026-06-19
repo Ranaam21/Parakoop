@@ -124,6 +124,62 @@ st.markdown(f"""
   /* ── General body text ── */
   p, .stMarkdown p {{ color: #c9d1d9 !important; }}
   label {{ color: {WHITE} !important; }}
+
+  /* ── Help icon: ? → italic i ── */
+  [data-testid="stTooltipHoverTarget"] svg {{ display: none !important; }}
+  [data-testid="stTooltipHoverTarget"] {{
+    font-style: italic !important; font-weight: 700 !important;
+    font-size: 11px !important; color: #8b949e !important;
+    background: rgba(110,118,129,0.18) !important;
+    border-radius: 50% !important;
+    width: 16px !important; height: 16px !important;
+    display: inline-flex !important;
+    align-items: center !important; justify-content: center !important;
+    cursor: help !important; vertical-align: middle !important;
+    margin-left: 4px !important;
+  }}
+  [data-testid="stTooltipHoverTarget"]::after {{
+    content: "i" !important;
+  }}
+
+  /* ── Tooltip popup: white text on dark bg ── */
+  div[role="tooltip"], [data-testid="stTooltipContent"],
+  div[data-radix-popper-content-wrapper] {{
+    background: {PANEL} !important;
+    color: {WHITE} !important;
+    border: 1px solid #30363d !important;
+    border-radius: 8px !important;
+  }}
+  div[role="tooltip"] *, [data-testid="stTooltipContent"] *,
+  div[data-radix-popper-content-wrapper] * {{
+    color: {WHITE} !important;
+  }}
+
+  /* ── Custom CSS tooltip for HTML elements ── */
+  .pk-tip {{ position: relative; display: block; }}
+  .pk-tip-inner {{ cursor: help; }}
+  .pk-tip::after {{
+    content: attr(data-tip);
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: {PANEL};
+    color: {WHITE};
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    white-space: pre-wrap;
+    min-width: 230px;
+    max-width: 340px;
+    z-index: 9999;
+    pointer-events: none;
+    line-height: 1.55;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  }}
+  .pk-tip:hover::after {{ display: block; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -164,12 +220,15 @@ _METRIC_TIPS = {
 }
 
 def _metric(label: str, value: str, sub: str = '', color: str = BLUE) -> str:
-    tip = _METRIC_TIPS.get(label, '')
+    tip = _METRIC_TIPS.get(label, '').replace('"', '&quot;').replace('\n', '&#10;')
+    tip_attr = f'class="pk-tip" data-tip="{tip}"' if tip else ''
     return f"""
-    <div class="pk-metric" style="border-color:{color}" title="{tip}">
-      <div class="pk-metric-label">{label}</div>
+    <div {tip_attr}>
+    <div class="pk-metric" style="border-color:{color}">
+      <div class="pk-metric-label">{label}{' <em style="font-size:10px;opacity:.6;font-weight:400">i</em>' if tip else ''}</div>
       <div class="pk-metric-value" style="color:{color};font-size:22px">{value}</div>
       <div class="pk-metric-sub">{sub}</div>
+    </div>
     </div>"""
 
 
@@ -194,10 +253,12 @@ def _render_guardrails(guardrails: dict) -> None:
         with gr_cols[i]:
             cls = 'pk-gr-pass' if g['passed'] else 'pk-gr-fail'
             sym = '✓' if g['passed'] else '✗'
-            tip = _GR_TIPS.get(name, '')
+            tip = _GR_TIPS.get(name, '').replace('"', '&quot;').replace('\n', '&#10;')
             st.markdown(
-                f'<div class="{cls}" title="{tip}">{sym} {name}</div>'
-                f'<div class="pk-gr-note">{g["note"]}</div>',
+                f'<div class="pk-tip" data-tip="{tip}">'
+                f'  <div class="{cls}">{sym} {name} <em style="font-size:10px;opacity:.7">i</em></div>'
+                f'  <div class="pk-gr-note">{g["note"]}</div>'
+                f'</div>',
                 unsafe_allow_html=True,
             )
 
@@ -228,12 +289,49 @@ def _render_design_result(result: dict, all_results: list) -> None:
 
     st.markdown("")
 
-    # ── Car comparison ────────────────────────────────────────────────────────
-    st.markdown('<div class="pk-section">Before → After</div>', unsafe_allow_html=True)
-    fig_cmp = draw_car_comparison(
-        result['start_params'], result['end_params'], result['delta'],
-    )
-    st.plotly_chart(fig_cmp, use_container_width=True)
+    # ── Car comparison + batch cards side by side ─────────────────────────────
+    active_cd = result['achieved_cd']
+
+    if len(all_results) > 1:
+        cards_col, car_col = st.columns([1, 2.6], gap="large")
+        with cards_col:
+            st.markdown('<div class="pk-section">All styles — click to switch</div>',
+                        unsafe_allow_html=True)
+            for i, res in enumerate(all_results):
+                is_active = abs(res['achieved_cd'] - active_cd) < 1e-6
+                col   = BLUE if is_active else (GREEN if i == 0 else GREY)
+                label = "★ Best" if i == 0 else f"#{i + 1}"
+                err_i = res['achieved_cd'] - res['target_cd']
+                border = f"outline: 2px solid {BLUE};" if is_active else ""
+                st.markdown(f"""
+                <div class="pk-metric" style="border-color:{col};{border};margin-bottom:6px">
+                  <div class="pk-metric-label">{label} · {res['start_params']['style'].title()}</div>
+                  <div class="pk-metric-value" style="color:{col};font-size:18px">
+                    Cd {res['achieved_cd']:.4f}
+                  </div>
+                  <div class="pk-metric-sub">err {err_i:+.4f}</div>
+                </div>""", unsafe_allow_html=True)
+                if not is_active:
+                    if st.button("View this design →", key=f"batch_btn_{i}",
+                                 use_container_width=True):
+                        st.session_state['design_result'] = res
+                        st.rerun()
+                else:
+                    st.caption("▲ Currently shown above")
+                st.markdown("")
+        with car_col:
+            st.markdown('<div class="pk-section">Before → After</div>',
+                        unsafe_allow_html=True)
+            fig_cmp = draw_car_comparison(
+                result['start_params'], result['end_params'], result['delta'],
+            )
+            st.plotly_chart(fig_cmp, use_container_width=True)
+    else:
+        st.markdown('<div class="pk-section">Before → After</div>', unsafe_allow_html=True)
+        fig_cmp = draw_car_comparison(
+            result['start_params'], result['end_params'], result['delta'],
+        )
+        st.plotly_chart(fig_cmp, use_container_width=True)
 
     # ── Delta table + guardrails ──────────────────────────────────────────────
     col_tbl, col_gr = st.columns([3, 2], gap="large")
@@ -264,36 +362,6 @@ def _render_design_result(result: dict, all_results: list) -> None:
         st.markdown('<div class="pk-section">Physics Guardrails</div>',
                     unsafe_allow_html=True)
         _render_guardrails(result['guardrails'])
-
-    # ── Batch cards (clickable) ───────────────────────────────────────────────
-    if len(all_results) > 1:
-        st.markdown('<div class="pk-section">All Starting Styles — click to compare</div>',
-                    unsafe_allow_html=True)
-        active_cd = result['achieved_cd']
-        bcols = st.columns(len(all_results))
-        for i, res in enumerate(all_results):
-            with bcols[i]:
-                is_active = abs(res['achieved_cd'] - active_cd) < 1e-6
-                col   = BLUE if is_active else (GREEN if i == 0 else GREY)
-                label = "★ Best" if i == 0 else f"#{i + 1}"
-                err_i = res['achieved_cd'] - res['target_cd']
-                border = f"outline: 2px solid {BLUE};" if is_active else ""
-                st.markdown(f"""
-                <div class="pk-metric" style="border-color:{col};{border}"
-                     title="Click 'View' below to load this design's before/after comparison">
-                  <div class="pk-metric-label">{label} · {res['start_params']['style'].title()}</div>
-                  <div class="pk-metric-value" style="color:{col};font-size:20px">
-                    Cd {res['achieved_cd']:.4f}
-                  </div>
-                  <div class="pk-metric-sub">err {err_i:+.4f}</div>
-                </div>""", unsafe_allow_html=True)
-                if not is_active:
-                    if st.button("View →", key=f"batch_btn_{i}",
-                                 use_container_width=True):
-                        st.session_state['design_result'] = res
-                        st.rerun()
-                else:
-                    st.caption("▲ Currently shown")
 
 
 def _render_explore(gdf: pd.DataFrame) -> None:
