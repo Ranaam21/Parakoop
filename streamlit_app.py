@@ -308,7 +308,10 @@ def _render_design_result(result: dict, all_results: list) -> None:
         st.markdown(_metric("Physics", "✓ All pass" if ok else "✗ Violations", '', pc),
                     unsafe_allow_html=True)
 
-    st.markdown("")
+    # ── Physics Guardrails — full-width row so tooltips aren't clipped ──────────
+    st.markdown('<div class="pk-section">Physics Guardrails</div>',
+                unsafe_allow_html=True)
+    _render_guardrails(result['guardrails'])
 
     # ── Car comparison + batch cards side by side ─────────────────────────────
     active_cd = result['achieved_cd']
@@ -354,34 +357,26 @@ def _render_design_result(result: dict, all_results: list) -> None:
         )
         st.plotly_chart(fig_cmp, use_container_width=True)
 
-    # ── Delta table + guardrails ──────────────────────────────────────────────
-    col_tbl, col_gr = st.columns([3, 2], gap="large")
-
-    with col_tbl:
-        st.markdown('<div class="pk-section">Geometry Changes</div>',
-                    unsafe_allow_html=True)
-        if result['delta']:
-            rows = []
-            for param, (v0, v1, d) in sorted(
-                result['delta'].items(), key=lambda x: abs(x[1][2]), reverse=True
-            ):
-                unit = '°' if 'deg' in param else ('mm' if '_mm' in param else '')
-                rows.append({
-                    'Parameter': param.replace('_', ' '),
-                    'Before': f"{v0:.1f}{unit}",
-                    'After':  f"{v1:.1f}{unit}",
-                    'Δ':      f"{d:+.1f}{unit}",
-                    'Effect': "▼ less drag" if d < 0 else "▲ more drag",
-                })
-            st.dataframe(pd.DataFrame(rows), hide_index=True,
-                         use_container_width=True)
-        else:
-            st.info("Model already near target — no significant changes needed.")
-
-    with col_gr:
-        st.markdown('<div class="pk-section">Physics Guardrails</div>',
-                    unsafe_allow_html=True)
-        _render_guardrails(result['guardrails'])
+    # ── Delta table — full width ──────────────────────────────────────────────
+    st.markdown('<div class="pk-section">Geometry Changes</div>',
+                unsafe_allow_html=True)
+    if result['delta']:
+        rows = []
+        for param, (v0, v1, d) in sorted(
+            result['delta'].items(), key=lambda x: abs(x[1][2]), reverse=True
+        ):
+            unit = '°' if 'deg' in param else ('mm' if '_mm' in param else '')
+            rows.append({
+                'Parameter': param.replace('_', ' '),
+                'Before': f"{v0:.1f}{unit}",
+                'After':  f"{v1:.1f}{unit}",
+                'Δ':      f"{d:+.1f}{unit}",
+                'Effect': "▼ less drag" if d < 0 else "▲ more drag",
+            })
+        st.dataframe(pd.DataFrame(rows), hide_index=True,
+                     use_container_width=True)
+    else:
+        st.info("Model already near target — no significant changes needed.")
 
 
 def _render_explore(gdf: pd.DataFrame) -> None:
