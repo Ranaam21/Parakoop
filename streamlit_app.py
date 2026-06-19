@@ -217,6 +217,27 @@ _METRIC_TIPS = {
     "Lift C_l":     ("Lift Coefficient. Cl = F_lift / (½ρv²A).\n"
                      "Negative = downforce. Positive = lift.\n"
                      "Highway stability prefers Cl ≤ 0."),
+    "Koopman dim K": ("Koopman observable space dimension K = 256.\n"
+                      "The model lifts the 8-dim geometry vector θ into a\n"
+                      "K-dimensional space where aerodynamic evolution is\n"
+                      "approximately linear: ψ(t+1) = A(θ) ψ(t).\n"
+                      "A(θ) is parametrised as a rank-32 low-rank matrix\n"
+                      "A(θ) = U Σ Vᵀ, keeping only 32 singular values for\n"
+                      "efficiency while capturing the dominant flow modes."),
+    "DrivAerNet MAE": ("Mean Absolute Error on the DrivAerNet dataset.\n"
+                       "MAE = mean |Cd_pred − Cd_CFD| over 1,163 designs.\n"
+                       "0.0087 means predictions are within ~0.009 Cd units\n"
+                       "of high-fidelity CFD on average — well within\n"
+                       "engineering design tolerance (±0.02)."),
+    "AhmedML MAE":   ("Mean Absolute Error on 74 held-out AhmedML samples.\n"
+                      "Ahmed body is a simplified bluff body used as a CFD\n"
+                      "benchmark; slant angle drives large Cd variation.\n"
+                      "MAE = 0.0404 Cd units on this out-of-distribution set."),
+    "Training samples": ("Total CFD designs used to train the Koopman model:\n"
+                         "• 9,163 DrivAerNet parametric car simulations\n"
+                         "• 457 AhmedML Ahmed body configurations\n"
+                         "= 9,620 samples spanning fastback / notchback /\n"
+                         "  estateback styles across a wide geometry range."),
 }
 
 def _metric(label: str, value: str, sub: str = '', color: str = BLUE) -> str:
