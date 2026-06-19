@@ -43,7 +43,7 @@ st.markdown(f"""
   [data-testid="stAppViewContainer"] {{ background-color: {BG}; }}
   [data-testid="stHeader"] {{ background-color: {BG}; border-bottom: none; height: 0 !important; }}
   [data-testid="stToolbar"] {{ display: none !important; }}
-  .block-container {{ padding-top: 1.2rem !important; max-width: 100% !important; padding-bottom: 0.5rem !important; }}
+  .block-container {{ padding-top: 1.8rem !important; max-width: 100% !important; padding-bottom: 0.5rem !important; }}
 
   .pk-header {{
     display: flex; align-items: baseline; gap: 14px;
@@ -353,8 +353,7 @@ def _render_design_result(result: dict, all_results: list) -> None:
                     'Effect': "▼ less drag" if d < 0 else "▲ more drag",
                 })
             st.dataframe(pd.DataFrame(rows), hide_index=True,
-                         use_container_width=True,
-                         height=min(260, 44 + 35 * len(rows)))
+                         use_container_width=True)
         else:
             st.info("Model already near target — no significant changes needed.")
 
@@ -549,7 +548,7 @@ with tab_predict:
         ]
         st.dataframe(
             pd.DataFrame(live_rows, columns=['Parameter', 'Value']),
-            hide_index=True, use_container_width=True, height=230,
+            hide_index=True, use_container_width=True,
         )
 
     with right_col:
@@ -670,6 +669,7 @@ with tab_design:
 
     if 'design_result' in st.session_state:
         st.divider()
+        st.markdown('<div id="pk-results-anchor"></div>', unsafe_allow_html=True)
         _render_design_result(
             st.session_state['design_result'],
             st.session_state.get('design_results', []),
@@ -678,10 +678,15 @@ with tab_design:
             import streamlit.components.v1 as _components
             _components.html("""<script>
 setTimeout(function(){
-  var m = window.parent.document.querySelector('[data-testid="stMain"]')
-       || window.parent.document.querySelector('section.main');
-  if (m) m.scrollTo({top: m.scrollHeight, behavior: 'smooth'});
-}, 350);
+  var el = window.parent.document.getElementById('pk-results-anchor');
+  if (el) {
+    el.scrollIntoView({behavior: 'smooth', block: 'start'});
+  } else {
+    var m = window.parent.document.querySelector('[data-testid="stMain"]')
+         || window.parent.document.querySelector('section.main');
+    if (m) m.scrollBy({top: 480, behavior: 'smooth'});
+  }
+}, 400);
 </script>""", height=0)
 
 

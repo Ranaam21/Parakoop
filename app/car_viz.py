@@ -405,7 +405,7 @@ def cd_scatter_with_highlight(
         fig.add_trace(go.Scatter(
             x=grp['rear_slant_deg'], y=grp['cd'],
             mode='markers',
-            marker=dict(color=colors[sty], size=6, opacity=0.60),
+            marker=dict(color=colors[sty], size=7, opacity=0.82),
             name=sty,
             hovertemplate='<b>%{customdata}</b><br>slant: %{x:.1f}°  Cd: %{y:.4f}',
             customdata=grp['design_id'],
@@ -434,14 +434,15 @@ def cd_scatter_with_highlight(
         paper_bgcolor=BG, plot_bgcolor=BG,
         xaxis_title='Rear slant angle (°)',
         yaxis_title='Cd',
-        margin=dict(l=40, r=10, t=10, b=70),
-        height=250,
+        margin=dict(l=45, r=15, t=12, b=40),
+        height=215,
         legend=dict(
-            orientation='h',
-            yanchor='top', y=-0.22,
-            xanchor='center', x=0.5,
-            bgcolor='rgba(0,0,0,0)',
-            font=dict(size=11, color=WHITE),
+            orientation='v',
+            xanchor='left', x=0.01,
+            yanchor='top',  y=0.99,
+            bgcolor='rgba(13,17,23,0.72)',
+            bordercolor='#30363d', borderwidth=1,
+            font=dict(size=10, color=WHITE),
         ),
     )
     return fig
