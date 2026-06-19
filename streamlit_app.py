@@ -364,7 +364,7 @@ def _render_design_result(result: dict, all_results: list) -> None:
 
 
 def _render_explore(gdf: pd.DataFrame) -> None:
-    """Explore tab content."""
+    """Explore tab content — single row of 3 charts + stat strip."""
     style_map  = {'F': 'Fastback', 'N': 'Notchback', 'E': 'Estateback'}
     color_disc = {'Fastback': '#1E88E5', 'Notchback': '#FF8F00', 'Estateback': '#43A047'}
 
@@ -372,35 +372,45 @@ def _render_explore(gdf: pd.DataFrame) -> None:
     gdf['Style'] = gdf['design_id'].apply(lambda x: style_map.get(x[0], 'Fastback'))
     gdf['height_mm'] = gdf['height_mm'].fillna(gdf['height_mm'].median())
 
-    # Scatter: Cd vs slant
-    fig1 = px.scatter(
-        gdf, x='rear_slant_deg', y='cd',
-        color='Style', size='height_mm',
-        hover_data=['design_id', 'height_mm', 'width_mm', 'cabin_length_frac'],
-        labels={'rear_slant_deg': 'Rear Slant Angle (°)', 'cd': 'C_d'},
-        title="Drag Coefficient vs Rear Slant — 1,163 DrivAerNet Designs",
-        color_discrete_map=color_disc,
-        template='plotly_dark', opacity=0.65,
-    )
-    fig1.update_layout(paper_bgcolor=BG, plot_bgcolor=BG, height=380,
-                       margin=dict(l=50, r=20, t=45, b=50))
-    st.plotly_chart(fig1, use_container_width=True)
+    c_scatter, c_box, c_val = st.columns([1.6, 1, 1], gap="medium")
 
-    col_box, col_val = st.columns(2, gap="large")
+    with c_scatter:
+        fig1 = px.scatter(
+            gdf, x='rear_slant_deg', y='cd',
+            color='Style', size='height_mm', size_max=9,
+            hover_data=['design_id', 'height_mm', 'width_mm', 'cabin_length_frac'],
+            labels={'rear_slant_deg': 'Rear Slant (°)', 'cd': 'Cd'},
+            title="Cd vs Rear Slant  ·  1,163 designs",
+            color_discrete_map=color_disc,
+            template='plotly_dark', opacity=0.75,
+        )
+        fig1.update_layout(
+            paper_bgcolor=BG, plot_bgcolor=BG, height=268,
+            margin=dict(l=45, r=10, t=38, b=40),
+            legend=dict(
+                x=0.01, y=0.99, xanchor='left', yanchor='top',
+                bgcolor='rgba(13,17,23,0.80)', bordercolor='#30363d', borderwidth=1,
+                font=dict(size=9, color=WHITE),
+                itemclick='toggleothers', itemdoubleclick='toggle',
+            ),
+        )
+        st.plotly_chart(fig1, use_container_width=True)
 
-    with col_box:
+    with c_box:
         fig2 = px.box(
             gdf, x='Style', y='cd', color='Style',
             color_discrete_map=color_disc,
-            labels={'cd': 'C_d'},
-            title="C_d Distribution by Body Style",
+            labels={'cd': 'Cd'},
+            title="Cd Distribution",
             template='plotly_dark', points='outliers',
         )
-        fig2.update_layout(paper_bgcolor=BG, plot_bgcolor=BG, showlegend=False,
-                           height=330, margin=dict(l=50, r=20, t=45, b=40))
+        fig2.update_layout(
+            paper_bgcolor=BG, plot_bgcolor=BG, showlegend=False,
+            height=268, margin=dict(l=40, r=10, t=38, b=40),
+        )
         st.plotly_chart(fig2, use_container_width=True)
 
-    with col_val:
+    with c_val:
         val_path = os.path.join(_ROOT, 'results', 'ahmed_holdout_val_v3.csv')
         if os.path.exists(val_path):
             vdf = pd.read_csv(val_path)
@@ -411,7 +421,7 @@ def _render_explore(gdf: pd.DataFrame) -> None:
             fig3 = go.Figure()
             fig3.add_trace(go.Scatter(
                 x=vdf['cd_cfd'], y=vdf['cd_pred'], mode='markers',
-                marker=dict(color=BLUE, size=7, opacity=0.85,
+                marker=dict(color=BLUE, size=7, opacity=0.88,
                             line=dict(color=WHITE, width=0.5)),
                 name='ParaKoop',
                 hovertemplate='CFD: %{x:.4f}<br>Pred: %{y:.4f}<extra></extra>',
@@ -422,15 +432,17 @@ def _render_explore(gdf: pd.DataFrame) -> None:
                 name='Perfect', hoverinfo='skip',
             ))
             fig3.update_layout(
-                title=f'Predicted vs CFD C_d  (MAE = {mae:.4f})',
-                xaxis_title='CFD C_d', yaxis_title='Predicted C_d',
+                title=f'Pred vs CFD  (MAE = {mae:.4f})',
+                xaxis_title='CFD Cd', yaxis_title='Predicted Cd',
                 template='plotly_dark', paper_bgcolor=BG, plot_bgcolor=BG,
-                height=330, margin=dict(l=50, r=20, t=45, b=50),
-                legend=dict(x=0.02, y=0.97, bgcolor='rgba(0,0,0,0.5)'),
+                height=268, margin=dict(l=45, r=10, t=38, b=45),
+                legend=dict(
+                    x=0.02, y=0.97, bgcolor='rgba(0,0,0,0.55)',
+                    font=dict(color=WHITE, size=10),
+                ),
             )
             st.plotly_chart(fig3, use_container_width=True)
 
-    # Summary stats
     st.markdown('<div class="pk-section">Validation Summary</div>', unsafe_allow_html=True)
     s1, s2, s3, s4 = st.columns(4)
     with s1:
@@ -568,9 +580,28 @@ with tab_predict:
           <div class="pk-metric-sub">{cl_lbl}</div>
         </div></div>""", unsafe_allow_html=True)
 
-    with st.expander("📍 Position in Design Space", expanded=False):
+    if 'show_scatter' not in st.session_state:
+        st.session_state['show_scatter'] = False
+    btn_lbl = ("▲ Hide Position in Design Space"
+               if st.session_state['show_scatter']
+               else "📍 Show Position in Design Space ▼")
+    just_opened = False
+    if st.button(btn_lbl, key='scatter_btn', use_container_width=True):
+        st.session_state['show_scatter'] = not st.session_state['show_scatter']
+        just_opened = st.session_state['show_scatter']
+
+    if st.session_state['show_scatter']:
+        st.markdown('<div id="pk-scatter-anchor"></div>', unsafe_allow_html=True)
         st.plotly_chart(cd_scatter_with_highlight(geo_df, perf['Cd'], style),
                         use_container_width=True)
+        if just_opened:
+            import streamlit.components.v1 as _sc
+            _sc.html("""<script>
+setTimeout(function(){
+  var el = window.parent.document.getElementById('pk-scatter-anchor');
+  if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
+}, 300);
+</script>""", height=0)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

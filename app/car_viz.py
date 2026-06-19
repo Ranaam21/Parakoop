@@ -434,15 +434,17 @@ def cd_scatter_with_highlight(
         paper_bgcolor=BG, plot_bgcolor=BG,
         xaxis_title='Rear slant angle (°)',
         yaxis_title='Cd',
-        margin=dict(l=45, r=15, t=12, b=40),
+        margin=dict(l=45, r=112, t=12, b=40),
         height=215,
         legend=dict(
             orientation='v',
-            xanchor='left', x=0.01,
-            yanchor='top',  y=0.99,
-            bgcolor='rgba(13,17,23,0.72)',
+            xanchor='left',  x=1.02,
+            yanchor='top',   y=1.0,
+            bgcolor='rgba(13,17,23,0.88)',
             bordercolor='#30363d', borderwidth=1,
             font=dict(size=10, color=WHITE),
+            itemclick='toggleothers',
+            itemdoubleclick='toggle',
         ),
     )
     return fig
