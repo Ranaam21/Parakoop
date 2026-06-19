@@ -23,6 +23,7 @@ if _ROOT not in sys.path:
 from app.car_viz import (
     BG, BLUE, AMBER, GREEN, RED, GREY, WHITE, PANEL,
     cd_gauge, cd_scatter_with_highlight, draw_car_side, draw_car_comparison,
+    draw_car_front,
 )
 from app.model_utils import load_model_and_dataset, theta_from_sliders, predict
 
@@ -214,9 +215,10 @@ _v1.html("""<script>
   }
 
   scan();
+  setInterval(scan, 600);   // re-scan after every Streamlit rerender
   new MutationObserver(scan).observe(doc.body, {childList:true, subtree:true});
 })();
-</script>""", height=0)
+</script>""", height=1, scrolling=False)
 
 # ── Header ────────────────────────────────────────────────────────────────────
 
@@ -589,34 +591,19 @@ with tab_predict:
     guardrails = check_physics_guardrails(params, perf['Cd'])
 
     with car_col:
-        # Car figure with guardrail badges overlaid top-right
-        fig_car = draw_car_side(params, show_dims=True)
-        for j, (gr_name, g) in enumerate(guardrails.items()):
-            sym  = '✓' if g['passed'] else '✗'
-            clr  = GREEN if g['passed'] else RED
-            fig_car.add_annotation(
-                x=0.995, y=0.99 - j * 0.16,
-                xref='paper', yref='paper',
-                text=f" {sym} {gr_name} ",
-                showarrow=False,
-                font=dict(color=clr, size=11, family='monospace'),
-                bgcolor='rgba(33,38,45,0.88)',
-                bordercolor=clr, borderwidth=1, borderpad=4,
-                xanchor='right', yanchor='top',
-            )
-        st.plotly_chart(fig_car, use_container_width=True)
-
+        st.plotly_chart(draw_car_side(params, show_dims=True),
+                        use_container_width=True)
         # Live geometry table directly below car
         st.markdown('<div class="pk-section">Current Geometry</div>',
                     unsafe_allow_html=True)
         live_rows = [
-            ('Style',        params['style'].title()),
-            ('Rear slant',   f"{params['rear_slant_deg']:.1f} °"),
-            ('Height',       f"{params['height_mm']:.0f} mm"),
-            ('Width',        f"{params['width_mm']:.0f} mm"),
-            ('Cabin frac',   f"{params['cabin_frac']:.3f}"),
-            ('Cd',           f"{perf['Cd']:.4f}"),
-            ('Cl',           f"{perf['Cl']:+.4f}"),
+            ('Style',      params['style'].title()),
+            ('Rear slant', f"{params['rear_slant_deg']:.1f} °"),
+            ('Height',     f"{params['height_mm']:.0f} mm"),
+            ('Width',      f"{params['width_mm']:.0f} mm"),
+            ('Cabin frac', f"{params['cabin_frac']:.3f}"),
+            ('Cd',         f"{perf['Cd']:.4f}"),
+            ('Cl',         f"{perf['Cl']:+.4f}"),
         ]
         st.dataframe(
             pd.DataFrame(live_rows, columns=['Parameter', 'Value']),
@@ -639,6 +626,15 @@ with tab_predict:
           </div>
           <div class="pk-metric-sub">{cl_lbl}</div>
         </div></div>""", unsafe_allow_html=True)
+        # Front view — makes Width and Height sliders visually obvious
+        st.markdown('<div class="pk-section" style="margin-top:8px">Front View</div>',
+                    unsafe_allow_html=True)
+        st.plotly_chart(draw_car_front(params), use_container_width=True)
+
+    # ── Physics Guardrails row (full-width HTML so tooltips aren't clipped) ──
+    st.markdown('<div class="pk-section">Physics Guardrails</div>',
+                unsafe_allow_html=True)
+    _render_guardrails(guardrails)
 
     if 'show_scatter' not in st.session_state:
         st.session_state['show_scatter'] = False

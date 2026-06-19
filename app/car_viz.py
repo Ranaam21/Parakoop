@@ -339,6 +339,66 @@ def draw_car_comparison(
     return fig
 
 
+def draw_car_front(params: dict) -> go.Figure:
+    """
+    Front cross-section view — shows width × height so those sliders have
+    visible impact.  Trapezoid body (roof narrower than sill) + wheel circles.
+    """
+    W  = float(params['width_mm'])
+    H  = float(params['height_mm'])
+    gc = max(100.0, 0.08 * H)
+    wr = 0.115 * H * 0.88   # wheel radius
+
+    # Body outline: wider at sill, narrower at roof
+    roof_w = W * 0.76
+    bx = [-W/2,  W/2,  roof_w/2, -roof_w/2, -W/2]
+    by = [ gc,   gc,   H,         H,          gc ]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=bx, y=by, fill='toself',
+        fillcolor='rgba(30,136,229,0.15)',
+        line=dict(color=BLUE, width=2.5),
+        mode='lines', hoverinfo='skip', showlegend=False,
+    ))
+
+    # Wheels left + right
+    for wx in [-W * 0.34, W * 0.34]:
+        cx, cy = _circle(wx, gc, wr)
+        fig.add_trace(go.Scatter(
+            x=cx, y=cy, fill='toself', fillcolor='#2d333b',
+            line=dict(color=GREY, width=1),
+            mode='lines', hoverinfo='skip', showlegend=False,
+        ))
+
+    # Ground line
+    fig.add_hline(y=0, line=dict(color=GREY, width=0.8, dash='dot'))
+    fig.add_hrect(y0=-wr * 0.5, y1=0, fillcolor='rgba(110,118,129,0.06)', line_width=0)
+
+    # Width label (centre bottom)
+    fig.add_annotation(x=0, y=gc * 0.3,
+                       text=f"W = {W:.0f} mm",
+                       showarrow=False, font=dict(color=AMBER, size=10),
+                       bgcolor='rgba(13,17,23,0.75)')
+    # Height label (right edge)
+    fig.add_annotation(x=W / 2 * 1.08, y=H / 2,
+                       text=f"H = {H:.0f} mm",
+                       showarrow=False, font=dict(color=AMBER, size=10),
+                       bgcolor='rgba(13,17,23,0.75)', textangle=-90)
+
+    fig.update_layout(
+        template='plotly_dark', paper_bgcolor=BG, plot_bgcolor=BG,
+        xaxis=dict(visible=False, range=[-W * 0.72, W * 0.72]),
+        yaxis=dict(visible=False, scaleanchor='x', scaleratio=1,
+                   range=[-wr * 1.5, H * 1.28]),
+        margin=dict(l=5, r=5, t=22, b=5),
+        height=175,
+        showlegend=False,
+        title=dict(text='Front View', font=dict(color=GREY, size=10), x=0.5),
+    )
+    return fig
+
+
 def cd_gauge(cd_value: float, cd_min: float = 0.15, cd_max: float = 0.50) -> go.Figure:
     """Semi-circular Plotly Indicator gauge for Cd."""
     fig = go.Figure(go.Indicator(
