@@ -41,8 +41,9 @@ st.markdown(f"""
 <style>
   .stApp {{ background-color: {BG}; }}
   [data-testid="stAppViewContainer"] {{ background-color: {BG}; }}
-  [data-testid="stHeader"] {{ background-color: {BG}; border-bottom: none; }}
-  .block-container {{ padding-top: 1rem !important; max-width: 100% !important; }}
+  [data-testid="stHeader"] {{ background-color: {BG}; border-bottom: none; height: 0 !important; }}
+  [data-testid="stToolbar"] {{ display: none !important; }}
+  .block-container {{ padding-top: 2.5rem !important; max-width: 100% !important; }}
 
   .pk-header {{
     display: flex; align-items: baseline; gap: 14px;
@@ -86,6 +87,43 @@ st.markdown(f"""
     font-weight: 600; letter-spacing: 0.3px; transition: background 0.2s;
   }}
   .stButton > button:hover {{ background: #1565C0 !important; }}
+
+  /* ── Slider: bright label + value ── */
+  [data-testid="stSlider"] label,
+  [data-testid="stSlider"] label p {{
+    color: {WHITE} !important; font-size: 13px !important;
+  }}
+  [data-testid="stSlider"] [data-testid="stTickBarMin"],
+  [data-testid="stSlider"] [data-testid="stTickBarMax"] {{
+    color: #8b949e !important;
+  }}
+  [data-testid="stSlider"] div[data-baseweb="tooltip"] span {{
+    color: {WHITE} !important; background: {PANEL} !important;
+  }}
+
+  /* ── Checkbox: bright label ── */
+  [data-testid="stCheckbox"] label p {{ color: {WHITE} !important; }}
+  [data-testid="stToggle"]   label p {{ color: {WHITE} !important; }}
+
+  /* ── Caption / helper text ── */
+  [data-testid="stCaptionContainer"] p {{ color: #8b949e !important; }}
+
+  /* ── Radio: selected = white bold, unselected = muted ── */
+  [data-testid="stRadio"] label {{
+    color: #6e7681 !important; font-size: 13px !important;
+    transition: color 0.15s;
+  }}
+  [data-testid="stRadio"] label:has(input:checked) {{
+    color: {WHITE} !important; font-weight: 600 !important;
+  }}
+  [data-testid="stRadio"] label:has(input:checked) p {{
+    color: {WHITE} !important; font-weight: 600 !important;
+  }}
+  [data-testid="stRadio"] label p {{ color: inherit !important; }}
+
+  /* ── General body text ── */
+  p, .stMarkdown p {{ color: #c9d1d9 !important; }}
+  label {{ color: {WHITE} !important; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -112,14 +150,43 @@ geo_df   = pd.read_csv(_GEO_CSV)
 # Helper functions (must be defined before tab rendering)
 # ══════════════════════════════════════════════════════════════════════════════
 
+_METRIC_TIPS = {
+    "Target C_d":   "Drag Coefficient target. Cd = F_drag / (½ρv²A). Typical cars: 0.25–0.35. Sports cars: 0.18–0.25.",
+    "Achieved C_d": ("Cd the optimiser reached after gradient descent.\n"
+                     "Err = Achieved − Target. |Err| < 0.005 is a good match."),
+    "Achieved C_l": ("Lift Coefficient. Cl = F_lift / (½ρv²A).\n"
+                     "Negative = downforce (pushes car down, improves grip).\n"
+                     "Positive = aerodynamic lift (reduces tyre contact force)."),
+    "Physics":      "Summary of Re / Ma / Eu guardrail checks. All must pass for the design to be physically valid.",
+    "Lift C_l":     ("Lift Coefficient. Cl = F_lift / (½ρv²A).\n"
+                     "Negative = downforce. Positive = lift.\n"
+                     "Highway stability prefers Cl ≤ 0."),
+}
+
 def _metric(label: str, value: str, sub: str = '', color: str = BLUE) -> str:
+    tip = _METRIC_TIPS.get(label, '')
     return f"""
-    <div class="pk-metric" style="border-color:{color}">
+    <div class="pk-metric" style="border-color:{color}" title="{tip}">
       <div class="pk-metric-label">{label}</div>
       <div class="pk-metric-value" style="color:{color};font-size:22px">{value}</div>
       <div class="pk-metric-sub">{sub}</div>
     </div>"""
 
+
+_GR_TIPS = {
+    'Re': ("Reynolds Number  Re = U∞ × L / ν\n"
+           "Measures inertial vs viscous forces.\n"
+           "Valid range: 3×10⁶ – 3×10⁷ (full-scale car at highway speed).\n"
+           "U∞ = 40 m/s, ν = 1.516×10⁻⁵ m²/s"),
+    'Ma': ("Mach Number  Ma = U∞ / c\n"
+           "Ratio of flow speed to speed of sound.\n"
+           "Must be < 0.30 for incompressible RANS to be valid.\n"
+           "U∞ = 40 m/s → Ma ≈ 0.117"),
+    'Eu': ("Euler Number proxy  Eu ≈ Cd\n"
+           "Ratio of pressure difference to dynamic pressure.\n"
+           "Plausible automotive range: 0.15 – 0.60.\n"
+           "Below 0.15 = physically implausible; above 0.60 = bluff body"),
+}
 
 def _render_guardrails(guardrails: dict) -> None:
     gr_cols = st.columns(3)
@@ -127,8 +194,9 @@ def _render_guardrails(guardrails: dict) -> None:
         with gr_cols[i]:
             cls = 'pk-gr-pass' if g['passed'] else 'pk-gr-fail'
             sym = '✓' if g['passed'] else '✗'
+            tip = _GR_TIPS.get(name, '')
             st.markdown(
-                f'<div class="{cls}">{sym} {name}</div>'
+                f'<div class="{cls}" title="{tip}">{sym} {name}</div>'
                 f'<div class="pk-gr-note">{g["note"]}</div>',
                 unsafe_allow_html=True,
             )
@@ -197,21 +265,35 @@ def _render_design_result(result: dict, all_results: list) -> None:
                     unsafe_allow_html=True)
         _render_guardrails(result['guardrails'])
 
-    # ── Batch cards ───────────────────────────────────────────────────────────
+    # ── Batch cards (clickable) ───────────────────────────────────────────────
     if len(all_results) > 1:
-        st.markdown('<div class="pk-section">All Starting Styles</div>',
+        st.markdown('<div class="pk-section">All Starting Styles — click to compare</div>',
                     unsafe_allow_html=True)
+        active_cd = result['achieved_cd']
         bcols = st.columns(len(all_results))
         for i, res in enumerate(all_results):
             with bcols[i]:
-                col = GREEN if i == 0 else GREY
+                is_active = abs(res['achieved_cd'] - active_cd) < 1e-6
+                col   = BLUE if is_active else (GREEN if i == 0 else GREY)
                 label = "★ Best" if i == 0 else f"#{i + 1}"
-                st.markdown(_metric(
-                    f"{label} · {res['start_params']['style'].title()}",
-                    f"Cd {res['achieved_cd']:.4f}",
-                    f"err {res['achieved_cd'] - res['target_cd']:+.4f}",
-                    col,
-                ), unsafe_allow_html=True)
+                err_i = res['achieved_cd'] - res['target_cd']
+                border = f"outline: 2px solid {BLUE};" if is_active else ""
+                st.markdown(f"""
+                <div class="pk-metric" style="border-color:{col};{border}"
+                     title="Click 'View' below to load this design's before/after comparison">
+                  <div class="pk-metric-label">{label} · {res['start_params']['style'].title()}</div>
+                  <div class="pk-metric-value" style="color:{col};font-size:20px">
+                    Cd {res['achieved_cd']:.4f}
+                  </div>
+                  <div class="pk-metric-sub">err {err_i:+.4f}</div>
+                </div>""", unsafe_allow_html=True)
+                if not is_active:
+                    if st.button("View →", key=f"batch_btn_{i}",
+                                 use_container_width=True):
+                        st.session_state['design_result'] = res
+                        st.rerun()
+                else:
+                    st.caption("▲ Currently shown")
 
 
 def _render_explore(gdf: pd.DataFrame) -> None:
@@ -221,6 +303,7 @@ def _render_explore(gdf: pd.DataFrame) -> None:
 
     gdf = gdf.copy()
     gdf['Style'] = gdf['design_id'].apply(lambda x: style_map.get(x[0], 'Fastback'))
+    gdf['height_mm'] = gdf['height_mm'].fillna(gdf['height_mm'].median())
 
     # Scatter: Cd vs slant
     fig1 = px.scatter(
@@ -314,20 +397,49 @@ with tab_predict:
             "style", ['fastback', 'notchback', 'estateback'],
             format_func=lambda s: s.title(),
             horizontal=True, label_visibility='collapsed',
+            help=("Rear body shape:\n"
+                  "• Fastback — continuous sloped roof flowing into the tail\n"
+                  "• Notchback — separate boot/trunk with vertical rear glass\n"
+                  "• Estateback — wagon/estate tail, almost vertical rear"),
         )
         mean_theta  = dataset.style_mean_theta(style)
         mean_params = dataset.theta_to_named_params(mean_theta)
 
         st.markdown('<div class="pk-section">Geometry</div>', unsafe_allow_html=True)
-        slant = st.slider("Rear slant angle (°)", 0.0, 21.4,
-                          float(np.clip(mean_params['rear_slant_deg'], 0.0, 21.4)), 0.1)
-        height = st.slider("Height (mm)", 1210, 1753,
-                           int(np.clip(mean_params['height_mm'], 1210, 1753)), 5)
-        w_h = st.slider("Width / Height ratio", 0.50, 1.80,
-                        float(np.clip(mean_params['width_height_ratio'], 0.50, 1.80)), 0.01)
-        cabin = st.slider("Cabin fraction", 0.35, 0.70,
-                          float(np.clip(mean_params['cabin_frac'], 0.35, 0.70)), 0.01)
-        detailed = st.checkbox("Detailed (mirrors + wheels)", value=True)
+        slant = st.slider(
+            "Rear slant angle (°)", 0.0, 21.4,
+            float(np.clip(mean_params['rear_slant_deg'], 0.0, 21.4)), 0.1,
+            help=("Angle of the rear body slope from horizontal.\n"
+                  "Higher = more aggressive taper (fastback); lower = more upright.\n"
+                  "DrivAerNet dataset range: 0° – 21.4°"),
+        )
+        height = st.slider(
+            "Height (mm)", 1210, 1753,
+            int(np.clip(mean_params['height_mm'], 1210, 1753)), 5,
+            help=("Overall car height from ground to roof in mm.\n"
+                  "Taller cars have greater frontal area → generally higher Cd.\n"
+                  "DrivAerNet range: 1,210 – 1,753 mm"),
+        )
+        w_h = st.slider(
+            "Width / Height ratio", 0.50, 1.80,
+            float(np.clip(mean_params['width_height_ratio'], 0.50, 1.80)), 0.01,
+            help=("Car width divided by car height (dimensionless).\n"
+                  "Higher ratio = wider, lower car (sports-car proportions).\n"
+                  "DrivAerNet range: 0.50 – 1.80"),
+        )
+        cabin = st.slider(
+            "Cabin fraction", 0.35, 0.70,
+            float(np.clip(mean_params['cabin_frac'], 0.35, 0.70)), 0.01,
+            help=("Passenger cabin length as a fraction of total body length.\n"
+                  "Higher = longer cabin, shorter rear overhang.\n"
+                  "Affects where the C-pillar (rear of roofline) sits."),
+        )
+        detailed = st.checkbox(
+            "Detailed (mirrors + wheels)", value=True,
+            help=("Detailed geometry flag (θ₇).\n"
+                  "Checked = full detail including side mirrors and wheel geometry.\n"
+                  "Unchecked = simplified smooth body (lower Cd in some configs)."),
+        )
 
     theta  = theta_from_sliders(style, slant, height, w_h, cabin,
                                  1.0 if detailed else 0.0)
@@ -346,7 +458,8 @@ with tab_predict:
             cl_col = GREEN if perf['Cl'] <= 0 else AMBER
             cl_lbl = "Downforce ↓" if perf['Cl'] <= 0 else "Lift ↑"
             st.markdown(f"""
-            <div class="pk-metric" style="border-color:{cl_col};margin-top:-6px">
+            <div class="pk-metric" style="border-color:{cl_col};margin-top:-6px"
+                 title="Lift Coefficient Cl = F_lift / (½ρv²A). Negative = downforce (improves grip). Positive = lift (reduces tyre contact). Highway stability prefers Cl ≤ 0.">
               <div class="pk-metric-label">Lift C<sub>l</sub></div>
               <div class="pk-metric-value" style="color:{cl_col};font-size:22px">
                 {perf['Cl']:+.4f}
@@ -378,25 +491,50 @@ with tab_design:
             "start_style", ['fastback', 'notchback', 'estateback'],
             format_func=lambda s: s.title(),
             horizontal=True, label_visibility='collapsed',
+            help=("Starting geometry for the optimiser.\n"
+                  "The optimiser begins at this style's mean geometry and moves\n"
+                  "toward your target Cd/Cl via gradient descent."),
         )
 
         st.markdown('<div class="pk-section">Targets</div>', unsafe_allow_html=True)
-        target_cd = st.slider("Target C_d", 0.18, 0.40, 0.23, 0.005, format="%.3f")
+        target_cd = st.slider(
+            "Target C_d", 0.18, 0.40, 0.23, 0.005, format="%.3f",
+            help=("Desired drag coefficient.\n"
+                  "Cd = F_drag / (½ρv²A)  — lower is better for fuel economy.\n"
+                  "Typical cars: 0.25–0.35 · Sports cars: 0.18–0.25 · SUVs: 0.35–0.45"),
+        )
 
-        use_cl    = st.toggle("Constrain lift (C_l)")
+        use_cl    = st.toggle(
+            "Constrain lift (C_l)",
+            help=("Enable to also optimise toward a target lift coefficient.\n"
+                  "Cl = F_lift / (½ρv²A). Negative = downforce (improves grip)."),
+        )
         target_cl = None
         if use_cl:
-            target_cl = st.slider("Target C_l", -0.20, 0.30, 0.05, 0.01, format="%.3f")
+            target_cl = st.slider(
+                "Target C_l", -0.20, 0.30, 0.05, 0.01, format="%.3f",
+                help=("Desired lift coefficient.\n"
+                      "Negative = downforce (pushes car onto road).\n"
+                      "Positive = aerodynamic lift (reduces tyre contact force).\n"
+                      "Highway stability prefers Cl ≤ 0."),
+            )
 
         st.markdown('<div class="pk-section">Design Freedom (λ_prox)</div>',
                     unsafe_allow_html=True)
         lambda_prox = st.slider(
             "λ_prox", 0.5, 10.0, 2.0, 0.5, label_visibility='collapsed',
-            help="Low = large changes; High = small conservative nudges",
+            help=("Proximity regularisation weight λ.\n"
+                  "Loss term: λ‖θ − θ₀‖²  penalises drift from starting geometry.\n"
+                  "• Low (0.5–1): large changes, may extrapolate beyond training data\n"
+                  "• Balanced (2.0): default — plausible changes within training range\n"
+                  "• High (5–10): tiny nudges, very conservative"),
         )
         st.caption("← Aggressive · Balanced (2.0) · Conservative →")
 
-        all_styles = st.checkbox("Try all 3 starting styles")
+        all_styles = st.checkbox(
+            "Try all 3 starting styles",
+            help="Runs the optimiser from Fastback, Notchback, and Estateback starting points, then shows all three results so you can pick the best.",
+        )
         st.markdown("")
         run_btn = st.button("🎯  Suggest Geometry", type="primary",
                             use_container_width=True)

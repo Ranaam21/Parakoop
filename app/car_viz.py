@@ -65,9 +65,13 @@ def side_profile_coords(params: dict) -> tuple[list, list]:
     rear_h    = float(np.clip(rear_h, gc + 0.15 * H, H))
 
     if style == 'notchback':
-        trunk_h = gc + 0.44 * H          # trunk lid
-        x_tc    = x_c + 0.06 * L        # start of rear window drop
-        x_te    = 0.88 * L               # end of trunk / start of vertical rear
+        trunk_h    = gc + 0.44 * H       # trunk lid height
+        # rear_slant_deg controls rear-window steepness:
+        # low slant → gentle/long window run; high slant → steep/short run
+        slant_norm  = float(np.clip(slant / 21.4, 0.0, 1.0))
+        window_run  = (0.04 + (1.0 - slant_norm) * 0.11) * L
+        x_tc        = x_c + window_run
+        x_te        = min(x_tc + 0.12 * L, 0.91 * L)
         xs = [
             0,          0.04*L,   x_hood,   x_ws,     x_ws,     x_a,
             x_a,        x_c,      x_tc,     x_te,     x_te,     x_rear,
