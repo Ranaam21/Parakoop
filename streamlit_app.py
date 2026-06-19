@@ -43,11 +43,11 @@ st.markdown(f"""
   [data-testid="stAppViewContainer"] {{ background-color: {BG}; }}
   [data-testid="stHeader"] {{ background-color: {BG}; border-bottom: none; height: 0 !important; }}
   [data-testid="stToolbar"] {{ display: none !important; }}
-  .block-container {{ padding-top: 2.5rem !important; max-width: 100% !important; }}
+  .block-container {{ padding-top: 1.2rem !important; max-width: 100% !important; padding-bottom: 0.5rem !important; }}
 
   .pk-header {{
     display: flex; align-items: baseline; gap: 14px;
-    padding: 8px 0 18px 0; border-bottom: 1px solid #21262d; margin-bottom: 16px;
+    padding: 4px 0 10px 0; border-bottom: 1px solid #21262d; margin-bottom: 10px;
   }}
   .pk-brand  {{ font-size: 26px; font-weight: 700; color: {WHITE}; letter-spacing: -0.5px; }}
   .pk-sub    {{ font-size: 13px; color: {GREY}; }}
@@ -79,7 +79,7 @@ st.markdown(f"""
   .pk-section {{
     font-size: 11px; font-weight: 600; color: {GREY};
     text-transform: uppercase; letter-spacing: 0.8px;
-    margin: 14px 0 8px 0; padding-bottom: 4px; border-bottom: 1px solid #21262d;
+    margin: 8px 0 5px 0; padding-bottom: 3px; border-bottom: 1px solid #21262d;
   }}
 
   .stButton > button {{
@@ -457,7 +457,7 @@ tab_predict, tab_design, tab_explore = st.tabs([
 ])
 
 with tab_predict:
-    left, right = st.columns([1, 2.3], gap="large")
+    left, car_col, right_col = st.columns([1, 2.3, 0.9], gap="medium")
 
     with left:
         st.markdown('<div class="pk-section">Body Style</div>', unsafe_allow_html=True)
@@ -514,34 +514,62 @@ with tab_predict:
     perf   = predict(model, theta)
     params = dataset.theta_to_named_params(theta)
 
-    with right:
-        col_car, col_gauges = st.columns([3, 1], gap="medium")
+    from koopman.inverse_design import check_physics_guardrails
+    guardrails = check_physics_guardrails(params, perf['Cd'])
 
-        with col_car:
-            st.plotly_chart(draw_car_side(params, show_dims=True),
-                            use_container_width=True)
+    with car_col:
+        # Car figure with guardrail badges overlaid top-right
+        fig_car = draw_car_side(params, show_dims=True)
+        for j, (gr_name, g) in enumerate(guardrails.items()):
+            sym  = '✓' if g['passed'] else '✗'
+            clr  = GREEN if g['passed'] else RED
+            fig_car.add_annotation(
+                x=0.995, y=0.99 - j * 0.16,
+                xref='paper', yref='paper',
+                text=f" {sym} {gr_name} ",
+                showarrow=False,
+                font=dict(color=clr, size=11, family='monospace'),
+                bgcolor='rgba(33,38,45,0.88)',
+                bordercolor=clr, borderwidth=1, borderpad=4,
+                xanchor='right', yanchor='top',
+            )
+        st.plotly_chart(fig_car, use_container_width=True)
 
-        with col_gauges:
-            st.plotly_chart(cd_gauge(perf['Cd']), use_container_width=True)
-            cl_col = GREEN if perf['Cl'] <= 0 else AMBER
-            cl_lbl = "Downforce ↓" if perf['Cl'] <= 0 else "Lift ↑"
-            st.markdown(f"""
-            <div class="pk-metric" style="border-color:{cl_col};margin-top:-6px"
-                 title="Lift Coefficient Cl = F_lift / (½ρv²A). Negative = downforce (improves grip). Positive = lift (reduces tyre contact). Highway stability prefers Cl ≤ 0.">
-              <div class="pk-metric-label">Lift C<sub>l</sub></div>
-              <div class="pk-metric-value" style="color:{cl_col};font-size:22px">
-                {perf['Cl']:+.4f}
-              </div>
-              <div class="pk-metric-sub">{cl_lbl}</div>
-            </div>""", unsafe_allow_html=True)
-
-        st.markdown('<div class="pk-section">Physics Guardrails</div>',
+        # Live geometry table directly below car
+        st.markdown('<div class="pk-section">Current Geometry</div>',
                     unsafe_allow_html=True)
-        from koopman.inverse_design import check_physics_guardrails
-        _render_guardrails(check_physics_guardrails(params, perf['Cd']))
+        live_rows = [
+            ('Style',        params['style'].title()),
+            ('Rear slant',   f"{params['rear_slant_deg']:.1f} °"),
+            ('Height',       f"{params['height_mm']:.0f} mm"),
+            ('Width',        f"{params['width_mm']:.0f} mm"),
+            ('Cabin frac',   f"{params['cabin_frac']:.3f}"),
+            ('Cd',           f"{perf['Cd']:.4f}"),
+            ('Cl',           f"{perf['Cl']:+.4f}"),
+        ]
+        st.dataframe(
+            pd.DataFrame(live_rows, columns=['Parameter', 'Value']),
+            hide_index=True, use_container_width=True, height=230,
+        )
 
-        st.markdown('<div class="pk-section">Position in Design Space</div>',
-                    unsafe_allow_html=True)
+    with right_col:
+        st.plotly_chart(cd_gauge(perf['Cd']), use_container_width=True)
+        cl_col = GREEN if perf['Cl'] <= 0 else AMBER
+        cl_lbl = "Downforce ↓" if perf['Cl'] <= 0 else "Lift ↑"
+        tip_cl = ("Lift Coefficient Cl = F_lift / (½ρv²A).&#10;"
+                  "Negative = downforce (improves grip).&#10;"
+                  "Highway stability prefers Cl ≤ 0.")
+        st.markdown(f"""
+        <div class="pk-tip" data-tip="{tip_cl}">
+        <div class="pk-metric" style="border-color:{cl_col};margin-top:-6px">
+          <div class="pk-metric-label">Lift C<sub>l</sub> <em style="font-size:10px;opacity:.6">i</em></div>
+          <div class="pk-metric-value" style="color:{cl_col};font-size:22px">
+            {perf['Cl']:+.4f}
+          </div>
+          <div class="pk-metric-sub">{cl_lbl}</div>
+        </div></div>""", unsafe_allow_html=True)
+
+    with st.expander("📍 Position in Design Space", expanded=False):
         st.plotly_chart(cd_scatter_with_highlight(geo_df, perf['Cd'], style),
                         use_container_width=True)
 
@@ -638,6 +666,7 @@ with tab_design:
                 )
                 st.session_state['design_result']  = r
                 st.session_state['design_results'] = [r]
+        st.session_state['design_just_ran'] = True
 
     if 'design_result' in st.session_state:
         st.divider()
@@ -645,6 +674,15 @@ with tab_design:
             st.session_state['design_result'],
             st.session_state.get('design_results', []),
         )
+        if st.session_state.pop('design_just_ran', False):
+            import streamlit.components.v1 as _components
+            _components.html("""<script>
+setTimeout(function(){
+  var m = window.parent.document.querySelector('[data-testid="stMain"]')
+       || window.parent.document.querySelector('section.main');
+  if (m) m.scrollTo({top: m.scrollHeight, behavior: 'smooth'});
+}, 350);
+</script>""", height=0)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -210,7 +210,7 @@ def draw_car_side(
             range=[-wheel_r * 1.4, H * 1.30],
         ),
         margin=dict(l=5, r=5, t=5, b=5),
-        height=300,
+        height=220,
         showlegend=False,
     )
     return fig
@@ -329,7 +329,7 @@ def draw_car_comparison(
             range=[-wheel_r * 1.4, H_max * 1.38],
         ),
         margin=dict(l=5, r=5, t=30, b=5),
-        height=340,
+        height=280,
         legend=dict(
             x=0.02, y=0.97,
             bgcolor='rgba(0,0,0,0.5)',
@@ -379,8 +379,8 @@ def cd_gauge(cd_value: float, cd_min: float = 0.15, cd_max: float = 0.50) -> go.
     fig.update_layout(
         paper_bgcolor=BG,
         font=dict(color=WHITE),
-        height=210,
-        margin=dict(l=15, r=15, t=35, b=5),
+        height=185,
+        margin=dict(l=10, r=10, t=30, b=5),
     )
     return fig
 
@@ -405,7 +405,7 @@ def cd_scatter_with_highlight(
         fig.add_trace(go.Scatter(
             x=grp['rear_slant_deg'], y=grp['cd'],
             mode='markers',
-            marker=dict(color=colors[sty], size=4, opacity=0.55),
+            marker=dict(color=colors[sty], size=6, opacity=0.60),
             name=sty,
             hovertemplate='<b>%{customdata}</b><br>slant: %{x:.1f}°  Cd: %{y:.4f}',
             customdata=grp['design_id'],
@@ -434,12 +434,14 @@ def cd_scatter_with_highlight(
         paper_bgcolor=BG, plot_bgcolor=BG,
         xaxis_title='Rear slant angle (°)',
         yaxis_title='Cd',
-        margin=dict(l=40, r=10, t=10, b=40),
-        height=220,
+        margin=dict(l=40, r=10, t=10, b=70),
+        height=250,
         legend=dict(
-            x=0.01, y=0.99,
-            bgcolor='rgba(0,0,0,0.5)',
-            font=dict(size=10),
+            orientation='h',
+            yanchor='top', y=-0.22,
+            xanchor='center', x=0.5,
+            bgcolor='rgba(0,0,0,0)',
+            font=dict(size=11, color=WHITE),
         ),
     )
     return fig
