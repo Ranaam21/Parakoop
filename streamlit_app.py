@@ -125,9 +125,9 @@ st.markdown(f"""
   p, .stMarkdown p {{ color: #c9d1d9 !important; }}
   label {{ color: {WHITE} !important; }}
 
-  /* ── Help icon: ? → italic i ── */
-  [data-testid="stTooltipHoverTarget"] svg {{ display: none !important; }}
-  [data-testid="stTooltipHoverTarget"] {{
+  /* ── Help icon: ? → italic i  (only inside widget labels, not dataframe headers) ── */
+  label [data-testid="stTooltipHoverTarget"] svg {{ display: none !important; }}
+  label [data-testid="stTooltipHoverTarget"] {{
     font-style: italic !important; font-weight: 700 !important;
     font-size: 11px !important; color: #8b949e !important;
     background: rgba(110,118,129,0.18) !important;
@@ -138,7 +138,7 @@ st.markdown(f"""
     cursor: help !important; vertical-align: middle !important;
     margin-left: 4px !important;
   }}
-  [data-testid="stTooltipHoverTarget"]::after {{
+  label [data-testid="stTooltipHoverTarget"]::after {{
     content: "i" !important;
   }}
 
@@ -386,10 +386,13 @@ def _render_explore(gdf: pd.DataFrame) -> None:
         )
         fig1.update_layout(
             paper_bgcolor=BG, plot_bgcolor=BG, height=268,
-            margin=dict(l=45, r=10, t=38, b=40),
+            title_font_color=WHITE,
+            margin=dict(l=45, r=108, t=38, b=40),
             legend=dict(
-                x=0.01, y=0.99, xanchor='left', yanchor='top',
-                bgcolor='rgba(13,17,23,0.80)', bordercolor='#30363d', borderwidth=1,
+                orientation='v',
+                xanchor='left', x=1.02,
+                yanchor='top',  y=1.0,
+                bgcolor='rgba(13,17,23,0.88)', bordercolor='#30363d', borderwidth=1,
                 font=dict(size=9, color=WHITE),
                 itemclick='toggleothers', itemdoubleclick='toggle',
             ),
@@ -407,6 +410,7 @@ def _render_explore(gdf: pd.DataFrame) -> None:
         fig2.update_layout(
             paper_bgcolor=BG, plot_bgcolor=BG, showlegend=False,
             height=268, margin=dict(l=40, r=10, t=38, b=40),
+            title_font_color=WHITE,
         )
         st.plotly_chart(fig2, use_container_width=True)
 
@@ -432,12 +436,17 @@ def _render_explore(gdf: pd.DataFrame) -> None:
                 name='Perfect', hoverinfo='skip',
             ))
             fig3.update_layout(
-                title=f'Pred vs CFD  (MAE = {mae:.4f})',
+                title=dict(
+                    text=f'Pred vs CFD  (MAE = {mae:.4f})',
+                    font=dict(color=WHITE),
+                ),
                 xaxis_title='CFD Cd', yaxis_title='Predicted Cd',
                 template='plotly_dark', paper_bgcolor=BG, plot_bgcolor=BG,
                 height=268, margin=dict(l=45, r=10, t=38, b=45),
                 legend=dict(
-                    x=0.02, y=0.97, bgcolor='rgba(0,0,0,0.55)',
+                    x=0.02, y=0.97,
+                    bgcolor='rgba(110,118,129,0.22)',
+                    bordercolor='#6e7681', borderwidth=1,
                     font=dict(color=WHITE, size=10),
                 ),
             )

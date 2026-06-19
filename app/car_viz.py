@@ -439,7 +439,7 @@ def cd_scatter_with_highlight(
         legend=dict(
             orientation='v',
             xanchor='left',  x=1.02,
-            yanchor='top',   y=1.0,
+            yanchor='top',   y=0.84,
             bgcolor='rgba(13,17,23,0.88)',
             bordercolor='#30363d', borderwidth=1,
             font=dict(size=10, color=WHITE),
