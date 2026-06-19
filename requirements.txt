@@ -8,3 +8,5 @@ pyvista>=0.42.0
 tqdm>=4.65.0
 qiskit>=1.0.0
 qiskit-algorithms>=0.3.0
+streamlit>=1.35.0
+plotly>=5.18.0
