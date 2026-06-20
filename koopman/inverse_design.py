@@ -45,8 +45,8 @@ _C_SOUND = 343.0     # m/s   speed of sound at 20°C (ISA sea-level)
 _RE_MIN  = 3.0e6   # below this: model hasn't seen real full-scale cars
 _RE_MAX  = 3.0e7   # above this: beyond DrivAerNet training regime
 _MA_MAX  = 0.30    # compressibility onset; incompressible RANS not valid above
-_CD_MIN  = 0.15    # Eu proxy lower bound — below this Cd is physically implausible
-_CD_MAX  = 0.60    # Eu proxy upper bound — above this is bluff-body, not car
+_CD_MIN  = 0.18    # Eu proxy lower bound — below 0.18 no production car reaches
+_CD_MAX  = 0.35    # Eu proxy upper bound — above 0.35 exceeds typical car design target
 
 
 def check_physics_guardrails(end_params: dict, cd_pred: float) -> dict:

@@ -23,7 +23,7 @@ if _ROOT not in sys.path:
 from app.car_viz import (
     BG, BLUE, AMBER, GREEN, RED, GREY, WHITE, PANEL,
     cd_gauge, cd_scatter_with_highlight, draw_car_side, draw_car_comparison,
-    draw_car_front,
+    draw_car_iso,
 )
 from app.model_utils import load_model_and_dataset, theta_from_sliders, predict
 
@@ -126,9 +126,11 @@ st.markdown(f"""
   p, .stMarkdown p {{ color: #c9d1d9 !important; }}
   label {{ color: {WHITE} !important; }}
 
-  /* ── Help icon: ? → italic i  (only inside widget labels, not dataframe headers) ── */
-  label [data-testid="stTooltipHoverTarget"] svg {{ display: none !important; }}
-  label [data-testid="stTooltipHoverTarget"] {{
+  /* ── Help icon: ? → italic i  (widget labels + metric labels, NOT dataframe headers) ── */
+  label [data-testid="stTooltipHoverTarget"] svg,
+  [data-testid="stMetricLabel"] [data-testid="stTooltipHoverTarget"] svg {{ display: none !important; }}
+  label [data-testid="stTooltipHoverTarget"],
+  [data-testid="stMetricLabel"] [data-testid="stTooltipHoverTarget"] {{
     font-style: italic !important; font-weight: 700 !important;
     font-size: 11px !important; color: #8b949e !important;
     background: rgba(110,118,129,0.18) !important;
@@ -139,7 +141,8 @@ st.markdown(f"""
     cursor: help !important; vertical-align: middle !important;
     margin-left: 4px !important;
   }}
-  label [data-testid="stTooltipHoverTarget"]::after {{
+  label [data-testid="stTooltipHoverTarget"]::after,
+  [data-testid="stMetricLabel"] [data-testid="stTooltipHoverTarget"]::after {{
     content: "i" !important;
   }}
 
@@ -156,8 +159,45 @@ st.markdown(f"""
     color: {WHITE} !important;
   }}
 
-  /* .pk-tip base — tooltip is now JS-driven (position:fixed on body) */
-  .pk-tip {{ display: block; cursor: help; }}
+  /* .pk-tip base */
+  .pk-tip {{ display: block; }}
+
+  /* ── Guardrail badges: equal fixed size at rest, expand on hover ── */
+  .gr-badge {{
+    max-height: 62px !important;
+    overflow: hidden !important;
+    transition: max-height 0.25s ease;
+  }}
+  .gr-badge:hover {{
+    max-height: 320px !important;
+  }}
+  .gr-info {{ display: none; }}
+  .gr-badge:hover .gr-info {{ display: block !important; }}
+
+  /* ── Compact geometry metrics ── */
+  [data-testid="stMetric"] {{
+    padding: 3px 8px !important;
+    background: {PANEL} !important;
+    border-radius: 5px !important;
+    margin-bottom: 2px !important;
+  }}
+  [data-testid="stMetricLabel"] p {{
+    font-size: 10px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+    color: #adbac7 !important;
+    font-weight: 600 !important;
+  }}
+  [data-testid="stMetricValue"] > div {{
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    line-height: 1.1 !important;
+    color: {WHITE} !important;
+  }}
+  [data-testid="stMetricDelta"] span {{
+    font-size: 10px !important;
+    color: #8b949e !important;
+  }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -300,25 +340,77 @@ _GR_TIPS = {
            "Must be < 0.30 for incompressible RANS to be valid.\n"
            "U∞ = 40 m/s → Ma ≈ 0.117"),
     'Eu': ("Euler Number proxy  Eu ≈ Cd\n"
-           "Ratio of pressure difference to dynamic pressure.\n"
-           "Plausible automotive range: 0.15 – 0.60.\n"
-           "Below 0.15 = physically implausible; above 0.60 = bluff body"),
+           "Automotive design target range: 0.18 – 0.35.\n"
+           "Below 0.18 = suspiciously low (model extrapolation risk).\n"
+           "Above 0.35 = above typical production-car target (SUV / high-drag).\n"
+           "Physics allows up to ~0.60 for a car-like shape."),
 }
+
+_GEOM_TIPS = {
+    'Style':      ("Body style — determines the rear-end architecture:\n"
+                   "• Fastback    — continuous sloped roofline flowing into the tail\n"
+                   "• Notchback   — separate boot/trunk lid with upright rear glass\n"
+                   "• Estateback  — wagon/estate tail (nearly vertical rear panel)"),
+    'Rear slant': ("α — rear body slope angle measured from horizontal.\n"
+                   "Higher angle = more aggressive fastback taper.\n"
+                   "DrivAerNet dataset range: 0° – 21.4°.\n"
+                   "Strongly influences Cd: higher slant often reduces drag in fastbacks."),
+    'Height':     ("H — overall car height, ground plane to roof peak (mm).\n"
+                   "Taller cars have a larger frontal area → tend toward higher Cd.\n"
+                   "DrivAerNet range: 1,210 – 1,753 mm."),
+    'Width':      ("W — maximum body width at the widest cross-section (mm).\n"
+                   "Shown as the diagonal W dimension line across the roof in the isometric view.\n"
+                   "Contributes to frontal area and side-wind sensitivity.\n"
+                   "DrivAerNet range: ~1,400 – 2,200 mm."),
+    'Cabin frac': ("Cabin fraction — length of passenger compartment as a fraction\n"
+                   "of total body length. Controls where the C-pillar (rear of roofline) sits.\n"
+                   "Higher = longer cabin, shorter rear overhang."),
+    'Length':     ("L — Reference body length (mm). Overall car length from front bumper to tail.\n"
+                   "DrivAerNet style defaults: Fastback ~4850 mm · Notchback ~4780 mm · Estateback ~4800 mm.\n"
+                   "Affects the height/length ratio (h/L) fed to the Koopman model — longer car → lower h/L → lower predicted Cd."),
+    'Cd':         ("Drag Coefficient   Cd = F_drag / (½ ρ U∞² A)\n"
+                   "Dimensionless aerodynamic drag. Lower is better for fuel economy.\n"
+                   "U∞ = freestream wind speed  |  A = frontal projected area.\n"
+                   "Sports car: 0.18–0.25  ·  Sedan: 0.25–0.35  ·  SUV: 0.35–0.45"),
+    'Cl':         ("Lift Coefficient   Cl = F_lift / (½ ρ U∞² A)\n"
+                   "Dimensionless aerodynamic lift/downforce.\n"
+                   "Negative = downforce (pushes car into road → better tyre grip).\n"
+                   "Positive = aerodynamic lift (reduces tyre contact force).\n"
+                   "Highway stability prefers Cl ≤ 0."),
+}
+
 
 def _render_guardrails(guardrails: dict) -> None:
     gr_cols = st.columns(3)
-    for i, (name, g) in enumerate(guardrails.items()):
-        with gr_cols[i]:
-            cls = 'pk-gr-pass' if g['passed'] else 'pk-gr-fail'
-            sym = '✓' if g['passed'] else '✗'
-            tip = _GR_TIPS.get(name, '').replace('"', '&quot;').replace('\n', '&#10;')
-            st.markdown(
-                f'<div class="pk-tip" data-tip="{tip}">'
-                f'  <div class="{cls}">{sym} {name} <em style="font-size:10px;opacity:.7">i</em></div>'
-                f'  <div class="pk-gr-note">{g["note"]}</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+    for col, (name, g) in zip(gr_cols, guardrails.items()):
+        with col:
+            color  = GREEN if g['passed'] else RED
+            sym    = '✓' if g['passed'] else '✗'
+            status = 'Pass' if g['passed'] else 'Fail'
+            note   = g.get('note', '')
+            tip    = _GR_TIPS.get(name, '').replace('\n', '<br>')
+            st.markdown(f'''
+<div class="gr-badge" style="
+    background:#21262d; border-radius:6px; padding:5px 9px;
+    border-top:3px solid {color}; margin-bottom:4px; min-height:58px">
+  <div style="font-size:10px; color:#adbac7; text-transform:uppercase;
+              letter-spacing:0.6px; font-weight:600; margin-bottom:3px">
+    {name}
+    <span style="font-size:8px; color:#6e7681; border:1px solid #6e7681;
+                 border-radius:50%; padding:0 2.5px; font-style:italic;
+                 margin-left:3px; vertical-align:middle">i</span>
+  </div>
+  <div style="font-size:13px; font-weight:700; color:{color}; line-height:1.3">
+    {sym}&nbsp;{status}
+  </div>
+  <div style="font-size:10px; color:#8b949e; margin-top:2px">{note}</div>
+  <div class="gr-info" style="
+      font-size:10px; color:#c9d1d9; background:rgba(13,17,23,0.85);
+      border-radius:4px; padding:5px 7px; margin-top:6px;
+      border-left:2px solid {color}; line-height:1.5">
+    {tip}
+  </div>
+</div>''', unsafe_allow_html=True)
 
 
 def _render_design_result(result: dict, all_results: list) -> None:
@@ -533,6 +625,7 @@ with tab_predict:
     left, car_col, right_col = st.columns([1, 2.3, 0.9], gap="medium")
 
     with left:
+        _gr_warn = st.empty()   # filled below if any guardrail fails
         st.markdown('<div class="pk-section">Body Style</div>', unsafe_allow_html=True)
         style = st.radio(
             "style", ['fastback', 'notchback', 'estateback'],
@@ -546,13 +639,15 @@ with tab_predict:
         mean_theta  = dataset.style_mean_theta(style)
         mean_params = dataset.theta_to_named_params(mean_theta)
 
+        _STYLE_L_DEFAULT = {'fastback': 4850, 'notchback': 4780, 'estateback': 4800}
+
         st.markdown('<div class="pk-section">Geometry</div>', unsafe_allow_html=True)
-        slant = st.slider(
-            "Rear slant angle (°)", 0.0, 21.4,
-            float(np.clip(mean_params['rear_slant_deg'], 0.0, 21.4)), 0.1,
-            help=("Angle of the rear body slope from horizontal.\n"
-                  "Higher = more aggressive taper (fastback); lower = more upright.\n"
-                  "DrivAerNet dataset range: 0° – 21.4°"),
+        length = st.slider(
+            "Length (mm)", 4200, 5500,
+            _STYLE_L_DEFAULT.get(style, 4800), 10,
+            help=("Overall car length from front bumper to tail in mm.\n"
+                  "DrivAerNet style defaults: Fastback 4850 · Notchback 4780 · Estateback 4800.\n"
+                  "Longer car → lower height/length ratio → generally lower Cd."),
         )
         height = st.slider(
             "Height (mm)", 1210, 1753,
@@ -561,12 +656,22 @@ with tab_predict:
                   "Taller cars have greater frontal area → generally higher Cd.\n"
                   "DrivAerNet range: 1,210 – 1,753 mm"),
         )
-        w_h = st.slider(
-            "Width / Height ratio", 0.50, 1.80,
-            float(np.clip(mean_params['width_height_ratio'], 0.50, 1.80)), 0.01,
-            help=("Car width divided by car height (dimensionless).\n"
-                  "Higher ratio = wider, lower car (sports-car proportions).\n"
-                  "DrivAerNet range: 0.50 – 1.80"),
+        _w_default = int(np.clip(
+            mean_params['width_height_ratio'] * mean_params['height_mm'], 1400, 2200
+        ))
+        width = st.slider(
+            "Width (mm)", 1400, 2200, _w_default, 10,
+            help=("Maximum car width at the widest cross-section (mm).\n"
+                  "Shown as the diagonal W dimension line across the roof.\n"
+                  "DrivAerNet range: ~1,400 – 2,200 mm."),
+        )
+        w_h = float(width) / float(height)
+        slant = st.slider(
+            "Rear slant angle (°)", 0.0, 21.4,
+            float(np.clip(mean_params['rear_slant_deg'], 0.0, 21.4)), 0.1,
+            help=("Angle of the rear body slope from horizontal.\n"
+                  "Higher = more aggressive taper (fastback); lower = more upright.\n"
+                  "DrivAerNet dataset range: 0° – 21.4°"),
         )
         cabin = st.slider(
             "Cabin fraction", 0.35, 0.70,
@@ -583,17 +688,48 @@ with tab_predict:
         )
 
     theta  = theta_from_sliders(style, slant, height, w_h, cabin,
-                                 1.0 if detailed else 0.0)
+                                 1.0 if detailed else 0.0,
+                                 ref_length_mm=float(length))
     perf   = predict(model, theta)
     params = dataset.theta_to_named_params(theta)
+    params['ref_length_mm'] = float(length)   # override with slider value
+    params['width_mm']      = float(width)    # override: slider is direct mm, not ratio
 
     from koopman.inverse_design import check_physics_guardrails
     guardrails = check_physics_guardrails(params, perf['Cd'])
 
+    # ── Guardrail warnings in the left slider panel ───────────────────────────
+    _failed = [(n, g) for n, g in guardrails.items() if not g['passed']]
+    if _failed:
+        with _gr_warn.container():
+            for name, g in _failed:
+                if name == 'Eu':
+                    st.warning(
+                        f"**Eu / Cd = {g['value']:.4f}** is outside the valid range "
+                        f"[{g['min']:.2f} – {g['max']:.2f}]. "
+                        f"Predicted drag is {'too low' if g['value'] < g['min'] else 'too high'} "
+                        f"for a production car — adjust rear slant or height."
+                    )
+                elif name == 'Re':
+                    st.warning(
+                        f"**Re = {g['value']:.2e}** is out of range "
+                        f"[{g['min']:.0e} – {g['max']:.0e}]. "
+                        f"Adjust car length via the Height slider."
+                    )
+                elif name == 'Ma':
+                    st.warning(
+                        f"**Ma = {g['value']:.3f}** exceeds the incompressible limit "
+                        f"(< {g['max']:.2f}). Flow compressibility effects not modelled."
+                    )
+
     with car_col:
-        st.plotly_chart(draw_car_side(params, show_dims=True),
-                        use_container_width=True)
-        # Live geometry table directly below car
+        # Physics guardrails — compact badges ABOVE the car
+        st.markdown('<div class="pk-section">Physics Guardrails</div>',
+                    unsafe_allow_html=True)
+        _render_guardrails(guardrails)
+        # 3D isometric car (shows width, height, style, slant all in one shape)
+        st.plotly_chart(draw_car_iso(params), use_container_width=True)
+        # Compact geometry strip — Cd/Cl shown in right panel; Length is read-only
         st.markdown('<div class="pk-section">Current Geometry</div>',
                     unsafe_allow_html=True)
         live_rows = [
@@ -601,40 +737,38 @@ with tab_predict:
             ('Rear slant', f"{params['rear_slant_deg']:.1f} °"),
             ('Height',     f"{params['height_mm']:.0f} mm"),
             ('Width',      f"{params['width_mm']:.0f} mm"),
+            ('Length',     f"{params['ref_length_mm']:.0f} mm"),
             ('Cabin frac', f"{params['cabin_frac']:.3f}"),
-            ('Cd',         f"{perf['Cd']:.4f}"),
-            ('Cl',         f"{perf['Cl']:+.4f}"),
         ]
-        st.dataframe(
-            pd.DataFrame(live_rows, columns=['Parameter', 'Value']),
-            hide_index=True, use_container_width=True,
-        )
+        _mc = st.columns(3)
+        for i, (lbl, val) in enumerate(live_rows):
+            with _mc[i % 3]:
+                st.metric(label=lbl, value=val,
+                          help=_GEOM_TIPS.get(lbl) or None)
 
     with right_col:
+        _cd_tip = (
+            "Drag Coefficient&#10;"
+            "Cd = F_drag / (½ ρ U∞² A)&#10;&#10;"
+            "U∞  freestream wind speed (air far upstream of car)&#10;"
+            "A   frontal projected area&#10;"
+            "ρ   air density (1.225 kg/m³ at sea level)&#10;&#10;"
+            "Green  Cd &lt; 0.25  (very aerodynamic)&#10;"
+            "Amber  0.25 – 0.35  (typical sedan)&#10;"
+            "Red    Cd &gt; 0.35  (high drag / bluff body)"
+        )
+        st.markdown(
+            f'<div class="pk-section" data-tip="{_cd_tip}" style="cursor:help">'
+            f'C<sub>d</sub> Prediction '
+            f'<em style="font-size:9px;color:#6e7681;border:1px solid #6e7681;'
+            f'border-radius:50%;padding:0 2.5px;font-style:italic">i</em></div>',
+            unsafe_allow_html=True,
+        )
         st.plotly_chart(cd_gauge(perf['Cd']), use_container_width=True)
         cl_col = GREEN if perf['Cl'] <= 0 else AMBER
         cl_lbl = "Downforce ↓" if perf['Cl'] <= 0 else "Lift ↑"
-        tip_cl = ("Lift Coefficient Cl = F_lift / (½ρv²A).&#10;"
-                  "Negative = downforce (improves grip).&#10;"
-                  "Highway stability prefers Cl ≤ 0.")
-        st.markdown(f"""
-        <div class="pk-tip" data-tip="{tip_cl}">
-        <div class="pk-metric" style="border-color:{cl_col};margin-top:-6px">
-          <div class="pk-metric-label">Lift C<sub>l</sub> <em style="font-size:10px;opacity:.6">i</em></div>
-          <div class="pk-metric-value" style="color:{cl_col};font-size:22px">
-            {perf['Cl']:+.4f}
-          </div>
-          <div class="pk-metric-sub">{cl_lbl}</div>
-        </div></div>""", unsafe_allow_html=True)
-        # Front view — makes Width and Height sliders visually obvious
-        st.markdown('<div class="pk-section" style="margin-top:8px">Front View</div>',
+        st.markdown(_metric("Lift C_l", f"{perf['Cl']:+.4f}", cl_lbl, cl_col),
                     unsafe_allow_html=True)
-        st.plotly_chart(draw_car_front(params), use_container_width=True)
-
-    # ── Physics Guardrails row (full-width HTML so tooltips aren't clipped) ──
-    st.markdown('<div class="pk-section">Physics Guardrails</div>',
-                unsafe_allow_html=True)
-    _render_guardrails(guardrails)
 
     if 'show_scatter' not in st.session_state:
         st.session_state['show_scatter'] = False
@@ -727,11 +861,7 @@ with tab_design:
         preview_params = dataset.theta_to_named_params(preview_theta)
         st.markdown('<div class="pk-section">Starting Geometry Preview</div>',
                     unsafe_allow_html=True)
-        st.plotly_chart(
-            draw_car_side(preview_params, color=GREY, fill_opacity=0.10,
-                          name=start_style.title(), show_dims=True),
-            use_container_width=True,
-        )
+        st.plotly_chart(draw_car_iso(preview_params), use_container_width=True)
 
     if run_btn:
         from koopman.inverse_design import suggest_geometry, batch_suggest
