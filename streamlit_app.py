@@ -22,8 +22,8 @@ if _ROOT not in sys.path:
 
 from app.car_viz import (
     BG, BLUE, AMBER, GREEN, RED, GREY, WHITE, PANEL,
-    cd_gauge, cd_scatter_with_highlight, draw_car_side, draw_car_comparison,
-    draw_car_iso,
+    cd_gauge, cl_gauge, cd_scatter_with_highlight, draw_car_side, draw_car_comparison,
+    draw_car_iso, draw_car_iso_comparison, draw_front_comparison,
 )
 from app.model_utils import load_model_and_dataset, theta_from_sliders, predict
 
@@ -44,11 +44,25 @@ st.markdown(f"""
   [data-testid="stAppViewContainer"] {{ background-color: {BG}; }}
   [data-testid="stHeader"] {{ background-color: {BG}; border-bottom: none; height: 0 !important; }}
   [data-testid="stToolbar"] {{ display: none !important; }}
-  .block-container {{ padding-top: 1.8rem !important; max-width: 100% !important; padding-bottom: 0.5rem !important; }}
+  .block-container {{ padding-top: 0.8rem !important; max-width: 100% !important; padding-bottom: 0.1rem !important; }}
+
+  /* Hide scrollbar (visual cleanliness) while keeping content accessible */
+  [data-testid="stMain"] {{ scrollbar-width: none; -ms-overflow-style: none; }}
+  [data-testid="stMain"]::-webkit-scrollbar {{ display: none; }}
+
+  /* Tighten vertical gaps between Streamlit elements */
+  [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlockBorderWrapper"],
+  [data-testid="stVerticalBlock"] > div {{ gap: 0 !important; }}
+  div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column"] {{ gap: 0 !important; }}
+  .element-container {{ margin-bottom: 0 !important; }}
+  [data-testid="stSlider"] {{ padding-top: 3px !important; padding-bottom: 3px !important; }}
+  [data-testid="stRadio"] {{ padding-top: 1px !important; padding-bottom: 1px !important; }}
+  [data-testid="stCheckbox"] {{ padding-top: 1px !important; padding-bottom: 1px !important; }}
+  [data-testid="stToggle"] {{ padding-top: 1px !important; padding-bottom: 1px !important; }}
 
   .pk-header {{
     display: flex; align-items: baseline; gap: 14px;
-    padding: 4px 0 10px 0; border-bottom: 1px solid #21262d; margin-bottom: 10px;
+    padding: 2px 0 5px 0; border-bottom: 1px solid #21262d; margin-bottom: 5px;
   }}
   .pk-brand  {{ font-size: 26px; font-weight: 700; color: {WHITE}; letter-spacing: -0.5px; }}
   .pk-sub    {{ font-size: 13px; color: {GREY}; }}
@@ -78,9 +92,9 @@ st.markdown(f"""
   .pk-gr-note {{ font-size: 11px; color: {GREY}; line-height: 1.4; margin-bottom: 12px; }}
 
   .pk-section {{
-    font-size: 11px; font-weight: 600; color: {GREY};
+    font-size: 10px; font-weight: 600; color: {GREY};
     text-transform: uppercase; letter-spacing: 0.8px;
-    margin: 8px 0 5px 0; padding-bottom: 3px; border-bottom: 1px solid #21262d;
+    margin: 4px 0 2px 0; padding-bottom: 2px; border-bottom: 1px solid #21262d;
   }}
 
   .stButton > button {{
@@ -109,9 +123,9 @@ st.markdown(f"""
   /* ── Caption / helper text ── */
   [data-testid="stCaptionContainer"] p {{ color: #8b949e !important; }}
 
-  /* ── Radio: selected = white bold, unselected = muted ── */
+  /* ── Radio: selected = white bold, unselected = visible grey ── */
   [data-testid="stRadio"] label {{
-    color: #6e7681 !important; font-size: 13px !important;
+    color: #adbac7 !important; font-size: 13px !important;
     transition: color 0.15s;
   }}
   [data-testid="stRadio"] label:has(input:checked) {{
@@ -201,13 +215,13 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# ── JS floating tooltip (bypasses Streamlit overflow:hidden on all containers) ──
+# ── JS floating tooltip — event delegation, survives DOM re-renders ──
 import streamlit.components.v1 as _v1
 _v1.html("""<script>
 (function(){
   var doc = window.parent.document;
 
-  // Create one shared floating tip div appended to <body>
+  // One shared floating tip appended to parent body
   var tip = doc.getElementById('pk-float-tip');
   if (!tip) {
     tip = doc.createElement('div');
@@ -224,39 +238,58 @@ _v1.html("""<script>
 
   function decode(s) {
     return s.replace(/&#10;/g,'\n').replace(/&quot;/g,'"')
-            .replace(/&amp;/g,'&').replace(/&#39;/g,"'");
+            .replace(/&amp;/g,'&').replace(/&#39;/g,"'")
+            .replace(/&lt;/g,'<').replace(/&gt;/g,'>');
   }
 
   function position(e) {
-    var x = e.clientX + 14, y = e.clientY - 12;
     var tw = tip.offsetWidth || 280, th = tip.offsetHeight || 120;
-    if (x + tw > window.parent.innerWidth)  x = e.clientX - tw - 14;
-    if (y + th > window.parent.innerHeight) y = e.clientY - th - 14;
+    var x = e.clientX + 14;
+    var y = e.clientY - th - 10;
+    if (y < 4) y = e.clientY + 14;
+    if (x + tw > window.parent.innerWidth - 8) x = e.clientX - tw - 14;
     tip.style.left = x + 'px';
     tip.style.top  = y + 'px';
   }
 
-  function attach(el) {
-    if (el.__pkTip) return;
-    el.__pkTip = true;
-    el.addEventListener('mouseenter', function(e) {
-      var d = el.getAttribute('data-tip');
-      if (!d) return;
-      tip.textContent = decode(d);
+  // Walk up from target to find the nearest ancestor with data-tip
+  function findTipEl(target) {
+    var el = target;
+    while (el && el !== doc.body) {
+      if (el.hasAttribute && el.hasAttribute('data-tip')) return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
+
+  var current = null;
+
+  // Capture-phase mouseover: fires before child elements, works with delegated structure
+  doc.body.addEventListener('mouseover', function(e) {
+    var el = findTipEl(e.target);
+    if (el) {
+      current = el;
+      tip.textContent = decode(el.getAttribute('data-tip') || '');
       tip.style.display = 'block';
       position(e);
-    });
-    el.addEventListener('mousemove', position);
-    el.addEventListener('mouseleave', function() { tip.style.display = 'none'; });
-  }
+    } else {
+      current = null;
+      tip.style.display = 'none';
+    }
+  }, true);
 
-  function scan() {
-    doc.querySelectorAll('[data-tip]').forEach(attach);
-  }
+  doc.body.addEventListener('mousemove', function(e) {
+    if (current) position(e);
+  }, true);
 
-  scan();
-  setInterval(scan, 600);   // re-scan after every Streamlit rerender
-  new MutationObserver(scan).observe(doc.body, {childList:true, subtree:true});
+  doc.body.addEventListener('mouseout', function(e) {
+    if (!current) return;
+    var rel = e.relatedTarget;
+    if (!rel || !current.contains(rel)) {
+      current = null;
+      tip.style.display = 'none';
+    }
+  }, true);
 })();
 </script>""", height=1, scrolling=False)
 
@@ -747,28 +780,8 @@ with tab_predict:
                           help=_GEOM_TIPS.get(lbl) or None)
 
     with right_col:
-        _cd_tip = (
-            "Drag Coefficient&#10;"
-            "Cd = F_drag / (½ ρ U∞² A)&#10;&#10;"
-            "U∞  freestream wind speed (air far upstream of car)&#10;"
-            "A   frontal projected area&#10;"
-            "ρ   air density (1.225 kg/m³ at sea level)&#10;&#10;"
-            "Green  Cd &lt; 0.25  (very aerodynamic)&#10;"
-            "Amber  0.25 – 0.35  (typical sedan)&#10;"
-            "Red    Cd &gt; 0.35  (high drag / bluff body)"
-        )
-        st.markdown(
-            f'<div class="pk-section" data-tip="{_cd_tip}" style="cursor:help">'
-            f'C<sub>d</sub> Prediction '
-            f'<em style="font-size:9px;color:#6e7681;border:1px solid #6e7681;'
-            f'border-radius:50%;padding:0 2.5px;font-style:italic">i</em></div>',
-            unsafe_allow_html=True,
-        )
         st.plotly_chart(cd_gauge(perf['Cd']), use_container_width=True)
-        cl_col = GREEN if perf['Cl'] <= 0 else AMBER
-        cl_lbl = "Downforce ↓" if perf['Cl'] <= 0 else "Lift ↑"
-        st.markdown(_metric("Lift C_l", f"{perf['Cl']:+.4f}", cl_lbl, cl_col),
-                    unsafe_allow_html=True)
+        st.plotly_chart(cl_gauge(perf['Cl']), use_container_width=True)
 
     if 'show_scatter' not in st.session_state:
         st.session_state['show_scatter'] = False
@@ -799,7 +812,7 @@ setTimeout(function(){
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tab_design:
-    d_left, d_right = st.columns([1, 2.3], gap="large")
+    d_left, d_right = st.columns([1, 2.5], gap="large")
 
     with d_left:
         st.markdown('<div class="pk-section">Starting Style</div>', unsafe_allow_html=True)
@@ -820,7 +833,7 @@ with tab_design:
                   "Typical cars: 0.25–0.35 · Sports cars: 0.18–0.25 · SUVs: 0.35–0.45"),
         )
 
-        use_cl    = st.toggle(
+        use_cl = st.toggle(
             "Constrain lift (C_l)",
             help=("Enable to also optimise toward a target lift coefficient.\n"
                   "Cl = F_lift / (½ρv²A). Negative = downforce (improves grip)."),
@@ -831,7 +844,7 @@ with tab_design:
                 "Target C_l", -0.20, 0.30, 0.05, 0.01, format="%.3f",
                 help=("Desired lift coefficient.\n"
                       "Negative = downforce (pushes car onto road).\n"
-                      "Positive = aerodynamic lift (reduces tyre contact force).\n"
+                      "Positive = aerodynamic lift.\n"
                       "Highway stability prefers Cl ≤ 0."),
             )
 
@@ -840,29 +853,27 @@ with tab_design:
         lambda_prox = st.slider(
             "λ_prox", 0.5, 10.0, 2.0, 0.5, label_visibility='collapsed',
             help=("Proximity regularisation weight λ.\n"
-                  "Loss term: λ‖θ − θ₀‖²  penalises drift from starting geometry.\n"
-                  "• Low (0.5–1): large changes, may extrapolate beyond training data\n"
-                  "• Balanced (2.0): default — plausible changes within training range\n"
-                  "• High (5–10): tiny nudges, very conservative"),
+                  "Loss: λ‖θ − θ₀‖² penalises drift from starting geometry.\n"
+                  "• Low (0.5–1): aggressive changes\n"
+                  "• Balanced (2.0): default\n"
+                  "• High (5–10): conservative nudges"),
         )
-        st.caption("← Aggressive · Balanced (2.0) · Conservative →")
+        st.caption("← Aggressive · Balanced · Conservative →")
 
         all_styles = st.checkbox(
             "Try all 3 starting styles",
-            help="Runs the optimiser from Fastback, Notchback, and Estateback starting points, then shows all three results so you can pick the best.",
+            help="Runs from Fastback, Notchback, and Estateback — compare results.",
         )
-        st.markdown("")
         run_btn = st.button("🎯  Suggest Geometry", type="primary",
                             use_container_width=True)
 
-    # Show starting geometry preview on the right before run
-    with d_right:
-        preview_theta  = dataset.style_mean_theta(start_style)
-        preview_params = dataset.theta_to_named_params(preview_theta)
-        st.markdown('<div class="pk-section">Starting Geometry Preview</div>',
-                    unsafe_allow_html=True)
-        st.plotly_chart(draw_car_iso(preview_params), use_container_width=True)
+        if 'design_result' in st.session_state:
+            if st.button("✕  Clear result", use_container_width=True):
+                del st.session_state['design_result']
+                st.session_state.pop('design_results', None)
+                st.rerun()
 
+    # Run optimiser BEFORE d_right so session state is ready when it renders
     if run_btn:
         from koopman.inverse_design import suggest_geometry, batch_suggest
         with st.spinner("Optimising geometry…"):
@@ -882,29 +893,153 @@ with tab_design:
                 )
                 st.session_state['design_result']  = r
                 st.session_state['design_results'] = [r]
-        st.session_state['design_just_ran'] = True
 
-    if 'design_result' in st.session_state:
-        st.divider()
-        st.markdown('<div id="pk-results-anchor"></div>', unsafe_allow_html=True)
-        _render_design_result(
-            st.session_state['design_result'],
-            st.session_state.get('design_results', []),
-        )
-        if st.session_state.pop('design_just_ran', False):
-            import streamlit.components.v1 as _components
-            _components.html("""<script>
-setTimeout(function(){
-  var el = window.parent.document.getElementById('pk-results-anchor');
-  if (el) {
-    el.scrollIntoView({behavior: 'smooth', block: 'start'});
-  } else {
-    var m = window.parent.document.querySelector('[data-testid="stMain"]')
-         || window.parent.document.querySelector('section.main');
-    if (m) m.scrollBy({top: 480, behavior: 'smooth'});
-  }
-}, 400);
-</script>""", height=0)
+    with d_right:
+        if 'design_result' not in st.session_state:
+            # ── Clean empty state ─────────────────────────────────────────────
+            st.markdown("""
+<div style="height:460px;display:flex;flex-direction:column;
+            align-items:center;justify-content:center;gap:12px;">
+  <div style="font-size:52px;opacity:0.12;line-height:1">🎯</div>
+  <div style="font-size:13px;color:#6e7681;letter-spacing:0.3px">
+    Set your target Cd and click <strong style="color:#adbac7">Suggest Geometry</strong>
+  </div>
+  <div style="font-size:11px;color:#484f58">
+    The Koopman optimiser will suggest new car dimensions to reach your target.
+  </div>
+</div>""", unsafe_allow_html=True)
+
+        else:
+            result      = st.session_state['design_result']
+            all_results = st.session_state.get('design_results', [])
+            err = result['achieved_cd'] - result['target_cd']
+            ok  = result['guardrails_ok']
+
+            # ── Row 1: Style chips (batch) ────────────────────────────────────
+            if len(all_results) > 1:
+                chip_cols = st.columns(len(all_results))
+                for i, (col, res) in enumerate(zip(chip_cols, all_results)):
+                    is_active = (res is result)
+                    sty   = res['start_params']['style'].title()
+                    cd_i  = res['achieved_cd']
+                    err_i = cd_i - res['target_cd']
+                    bdr = f"2px solid {BLUE}" if is_active else "1px solid #30363d"
+                    bg  = "rgba(30,136,229,0.10)" if is_active else PANEL
+                    lc  = BLUE if is_active else WHITE
+                    with col:
+                        st.markdown(f"""<div style="background:{bg};border:{bdr};
+border-radius:6px;padding:5px 8px;text-align:center;margin-bottom:2px">
+  <div style="font-size:9px;color:#adbac7;text-transform:uppercase;
+              letter-spacing:0.5px;font-weight:600">{sty}</div>
+  <div style="font-size:13px;font-weight:700;color:{lc}">Cd {cd_i:.4f}</div>
+  <div style="font-size:9px;color:#6e7681">err {err_i:+.4f}</div>
+</div>""", unsafe_allow_html=True)
+                        if not is_active:
+                            if st.button("Select", key=f"dsb_{i}",
+                                         use_container_width=True):
+                                st.session_state['design_result'] = res
+                                st.rerun()
+
+            # ── Row 2: Physics guardrails — reuse same function as Predict tab ──
+            _render_guardrails(result['guardrails'])
+
+            # ── Row 3: Car (left) + stacked gauges (right) ───────────────────
+            car_c, gauge_c = st.columns([3.2, 1.1], gap="small")
+
+            with gauge_c:
+                st.plotly_chart(
+                    cd_gauge(result['achieved_cd'], target_cd=result['target_cd'], height=175),
+                    use_container_width=True,
+                )
+                st.plotly_chart(
+                    cl_gauge(result['achieved_cl'], height=155),
+                    use_container_width=True,
+                )
+
+            with car_c:
+                # View selector + legend on the same row
+                leg_col, radio_col = st.columns([1, 1])
+                with leg_col:
+                    st.markdown("""
+<div style="display:flex;gap:18px;align-items:center;
+            font-size:10px;color:#adbac7;padding-top:4px">
+  <span style="display:flex;align-items:center;gap:5px">
+    <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5"
+      stroke="#26C6DA" stroke-width="2.2" stroke-dasharray="5,3"/></svg>
+    Before
+  </span>
+  <span style="display:flex;align-items:center;gap:5px">
+    <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5"
+      stroke="#1E88E5" stroke-width="2.5"/></svg>
+    After
+  </span>
+</div>""", unsafe_allow_html=True)
+                with radio_col:
+                    view_mode = st.radio(
+                        "view",
+                        ["↔ Side", "⬛ Front", "◈ 3D"],
+                        horizontal=True,
+                        index=0,
+                        label_visibility="collapsed",
+                        key="design_view_mode",
+                    )
+
+                if view_mode == "↔ Side":
+                    fig_cmp = draw_car_comparison(
+                        result['start_params'], result['end_params'], result['delta'],
+                        height=240,
+                    )
+                elif view_mode == "⬛ Front":
+                    fig_cmp = draw_front_comparison(
+                        result['start_params'], result['end_params'], result['delta'],
+                        height=240,
+                    )
+                else:
+                    fig_cmp = draw_car_iso_comparison(
+                        result['start_params'], result['end_params'], result['delta'],
+                        height=240,
+                    )
+                st.plotly_chart(fig_cmp, use_container_width=True)
+
+            # ── Row 4: Geometry Changes table (below car column only) ─────────
+            if result['delta']:
+                rows = []
+                for param, (v0, v1, d) in sorted(
+                    result['delta'].items(), key=lambda x: abs(x[1][2]), reverse=True
+                ):
+                    unit = '°' if 'deg' in param else ('mm' if '_mm' in param else '')
+                    rows.append((param.replace('_', ' ').title(),
+                                 f"{v0:.1f}{unit}", f"{v1:.1f}{unit}", d, f"{d:+.1f}{unit}"))
+
+                body = ''
+                for i, (label, bef, aft, d_raw, d_str) in enumerate(rows):
+                    bg  = '#21262d' if i % 2 == 0 else '#1c2128'
+                    dc  = GREEN if d_raw < 0 else (AMBER if d_raw > 0 else GREY)
+                    body += (
+                        f'<tr style="background:{bg}">'
+                        f'<td style="padding:2px 8px;color:#c9d1d9">{label}</td>'
+                        f'<td style="padding:2px 8px;color:#8b949e;text-align:right">{bef}</td>'
+                        f'<td style="padding:2px 8px;color:{WHITE};font-weight:600;text-align:right">{aft}</td>'
+                        f'<td style="padding:2px 8px;color:{dc};font-weight:700;text-align:right">{d_str}</td>'
+                        f'</tr>'
+                    )
+                th = ('padding:2px 8px;font-size:9px;color:#8b949e;text-transform:uppercase;'
+                      'letter-spacing:0.5px;font-weight:600;border-bottom:1px solid #30363d')
+                st.markdown(f"""
+<table style="width:100%;border-collapse:collapse;font-size:11px;
+              font-family:-apple-system,BlinkMacSystemFont,sans-serif;margin-top:2px">
+  <thead style="background:#161b22">
+    <tr>
+      <th style="{th};text-align:left">Parameter</th>
+      <th style="{th};text-align:right">Before</th>
+      <th style="{th};text-align:right">After</th>
+      <th style="{th};text-align:right">Δ</th>
+    </tr>
+  </thead>
+  <tbody>{body}</tbody>
+</table>""", unsafe_allow_html=True)
+            else:
+                st.caption("Model already near target — no significant changes.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

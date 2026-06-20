@@ -220,20 +220,24 @@ def draw_car_side(
     return fig
 
 
+_BEFORE_CLR = '#26C6DA'   # cyan — used for "before" ghost in all comparison views
+
+
 def draw_car_comparison(
     params_before: dict,
     params_after: dict,
     delta: dict,
+    height: int = 300,
 ) -> go.Figure:
     """
-    Side-profile overlay: grey ghost (before) + blue solid (after).
-    Annotates each changed dimension with Δmm / Δ°.
+    Side-profile overlay: cyan dashed ghost (before) + blue solid (after).
+    Annotates each changed dimension with Δmm / Δ° arrows.
     """
-    L      = float(params_after['ref_length_mm'])
-    H_b    = float(params_before['height_mm'])
-    H_a    = float(params_after['height_mm'])
-    H_max  = max(H_b, H_a)
-    gc_a   = max(100.0, 0.08 * H_a)
+    L       = float(params_after['ref_length_mm'])
+    H_b     = float(params_before['height_mm'])
+    H_a     = float(params_after['height_mm'])
+    H_max   = max(H_b, H_a)
+    gc_a    = max(70.0, 0.055 * H_a)
     wheel_r = 0.115 * H_max
 
     xs_b, ys_b = side_profile_coords(params_before)
@@ -241,104 +245,194 @@ def draw_car_comparison(
 
     fig = go.Figure()
 
-    # Ghost before
+    # Ground / road
+    fig.add_hrect(y0=-wheel_r * 0.5, y1=0,
+                  fillcolor='rgba(110,118,129,0.06)', line_width=0)
+    fig.add_hline(y=0, line=dict(color=GREY, width=0.8, dash='dot'))
+
+    # Ghost before — cyan dashed
     fig.add_trace(go.Scatter(
         x=xs_b, y=ys_b,
-        fill='toself', fillcolor='rgba(110,118,129,0.08)',
-        line=dict(color='#6e7681', width=2, dash='dash'),
+        fill='toself', fillcolor='rgba(38,198,218,0.07)',
+        line=dict(color=_BEFORE_CLR, width=2.2, dash='dash'),
         mode='lines', name='Before', hoverinfo='skip',
     ))
-    # Solid after
+    # Solid after — blue
     fig.add_trace(go.Scatter(
         x=xs_a, y=ys_a,
         fill='toself', fillcolor='rgba(30,136,229,0.18)',
         line=dict(color=BLUE, width=2.5),
-        mode='lines', name='After', hoverinfo='skip',
+        mode='lines', name='After (suggested)', hoverinfo='skip',
     ))
 
-    # Wheels (after state)
+    # Wheels (after)
     for wx in (0.22 * L, 0.77 * L):
-        cx, cy = _circle(wx, gc_a, wheel_r * 0.88)
+        cx, cy = _circle(wx, gc_a, wheel_r)
         fig.add_trace(go.Scatter(
             x=cx, y=cy, fill='toself', fillcolor='#2d333b',
-            line=dict(color=GREY, width=1),
+            line=dict(color=GREY, width=1.2),
             mode='lines', hoverinfo='skip', showlegend=False,
         ))
 
-    # Delta annotations
-    ann_params = []
+    # ── Delta annotations ─────────────────────────────────────────────────────
+    def _arrow(x, y, ax, ay, col, txt):
+        fig.add_annotation(
+            x=x, y=y, ax=ax, ay=ay,
+            xref='x', yref='y', axref='x', ayref='y',
+            text=txt, showarrow=True,
+            arrowhead=3, arrowcolor=col, arrowwidth=2.5, arrowsize=0.9,
+            font=dict(color=col, size=11), bgcolor='rgba(13,17,23,0.88)',
+        )
+
+    def _label(x, y, txt, col, angle=0):
+        fig.add_annotation(x=x, y=y, text=txt, showarrow=False, textangle=angle,
+                           font=dict(color=col, size=11),
+                           bgcolor='rgba(13,17,23,0.88)')
+
     if 'height_mm' in delta:
-        v0, v1, d = delta['height_mm']
-        col = GREEN if d < 0 else AMBER
-        sign = '+' if d > 0 else ''
-        ann_params.append(dict(
-            x=L * 1.08, y=H_a / 2,
-            text=f"ΔH {sign}{d:.0f} mm",
-            color=col,
-            arrow_x=L * 1.06, arrow_y=H_a / 2,
-        ))
+        _, _, d = delta['height_mm']
+        col, sign = (GREEN, '') if d < 0 else (AMBER, '+')
+        x_arr = L * 1.04
+        # dashed old-H line
+        fig.add_shape(type='line', x0=x_arr, y0=0, x1=x_arr, y1=H_b,
+                      line=dict(color=col, width=2, dash='dashdot'))
+        fig.add_shape(type='line', x0=x_arr - L*0.007, y0=H_b,
+                      x1=x_arr + L*0.007, y1=H_b,
+                      line=dict(color=col, width=2))
+        _arrow(x_arr, H_a, x_arr, H_b, col, '')
+        _label(x_arr + L*0.045, (H_a + H_b) / 2,
+               f"ΔH {sign}{d:.0f} mm", col, -90)
+
     if 'rear_slant_deg' in delta:
-        v0, v1, d = delta['rear_slant_deg']
-        col = GREEN if d < 0 else AMBER
-        sign = '+' if d > 0 else ''
+        _, _, d = delta['rear_slant_deg']
+        col, sign = (GREEN, '') if d < 0 else (AMBER, '+')
         cabin = params_after['cabin_frac']
-        x_c   = min(0.30 * L + cabin * 0.62 * L, 0.83 * L)
-        ann_params.append(dict(
-            x=(x_c + 0.93 * L) / 2, y=H_max * 0.75,
-            text=f"Δα {sign}{d:.1f}°",
-            color=col,
-            arrow_x=None, arrow_y=None,
-        ))
+        x_c   = min(0.30 * L + cabin * 0.52 * L, 0.81 * L)
+        _label((x_c + 0.92 * L) / 2, H_max * 0.78,
+               f"Δα {sign}{d:.1f}°", col)
+
     if 'width_mm' in delta:
-        v0, v1, d = delta['width_mm']
-        col = GREEN if d < 0 else AMBER
-        sign = '+' if d > 0 else ''
-        ann_params.append(dict(
-            x=L * 0.5, y=H_max * 1.12,
-            text=f"ΔW {sign}{d:.0f} mm",
-            color=col,
-            arrow_x=None, arrow_y=None,
-        ))
+        _, _, d = delta['width_mm']
+        col, sign = (GREEN, '') if d < 0 else (AMBER, '+')
+        _label(L * 0.5, H_max * 1.10, f"ΔW {sign}{d:.0f} mm", col)
 
-    for ap in ann_params:
-        if ap['arrow_x'] is not None:
-            fig.add_annotation(
-                x=ap['x'], y=ap['y'],
-                ax=ap['arrow_x'], ay=ap['arrow_y'],
-                xref='x', yref='y', axref='x', ayref='y',
-                text=ap['text'], showarrow=True,
-                arrowhead=2, arrowcolor=ap['color'], arrowwidth=1.5,
-                font=dict(color=ap['color'], size=12),
-                bgcolor='rgba(13,17,23,0.75)',
-            )
-        else:
-            fig.add_annotation(
-                x=ap['x'], y=ap['y'],
-                text=ap['text'], showarrow=False,
-                font=dict(color=ap['color'], size=12),
-                bgcolor='rgba(13,17,23,0.75)',
-            )
-
-    fig.add_hline(y=0, line=dict(color=GREY, width=0.8, dash='dot'))
-    fig.add_hrect(y0=-wheel_r * 0.5, y1=0,
-                  fillcolor='rgba(110,118,129,0.06)', line_width=0)
+    if 'cabin_frac' in delta:
+        _, _, d = delta['cabin_frac']
+        col, sign = (GREEN, '') if d < 0 else (AMBER, '+')
+        _label(L * 0.62, H_max * 0.92, f"Δcabin {sign}{d:.3f}", col)
 
     fig.update_layout(
-        template='plotly_dark',
-        paper_bgcolor=BG,
-        plot_bgcolor=BG,
-        xaxis=dict(visible=False, range=[-0.06 * L, L * 1.22]),
-        yaxis=dict(
-            visible=False, scaleanchor='x', scaleratio=1,
-            range=[-wheel_r * 1.4, H_max * 1.38],
-        ),
-        margin=dict(l=5, r=5, t=30, b=5),
-        height=280,
-        legend=dict(
-            x=0.02, y=0.97,
-            bgcolor='rgba(0,0,0,0.5)',
-            font=dict(color=WHITE, size=11),
-        ),
+        template='plotly_dark', paper_bgcolor=BG, plot_bgcolor=BG,
+        xaxis=dict(visible=False, range=[-0.05 * L, L * 1.16]),
+        yaxis=dict(visible=False, scaleanchor='x', scaleratio=1,
+                   range=[-wheel_r * 1.2, H_max * 1.30]),
+        margin=dict(l=5, r=5, t=5, b=5),
+        height=height,
+        showlegend=False,
+    )
+    return fig
+
+
+def draw_front_comparison(
+    params_before: dict,
+    params_after: dict,
+    delta: dict,
+    height: int = 300,
+) -> go.Figure:
+    """
+    Front-face view: cyan dashed (before) vs blue solid (after).
+    Shows W and H changes clearly on a flat 2D face.
+    """
+    W_a = float(params_after['width_mm'])
+    W_b = float(params_before['width_mm'])
+    H_a = float(params_after['height_mm'])
+    H_b = float(params_before['height_mm'])
+    W_max = max(W_a, W_b)
+    H_max = max(H_a, H_b)
+    wheel_r = 0.115 * H_a
+    gc      = max(70.0, 0.055 * H_a)
+
+    fig = go.Figure()
+
+    # Road
+    fig.add_hrect(y0=-wheel_r * 0.4, y1=0,
+                  fillcolor='rgba(110,118,129,0.06)', line_width=0)
+    fig.add_hline(y=0, line=dict(color=GREY, width=0.8, dash='dot'))
+
+    # Before rectangle — cyan dashed
+    fig.add_shape(type='rect', x0=-W_b/2, y0=0, x1=W_b/2, y1=H_b,
+                  line=dict(color=_BEFORE_CLR, width=2.2, dash='dash'),
+                  fillcolor='rgba(38,198,218,0.06)')
+
+    # After rectangle — blue solid
+    fig.add_shape(type='rect', x0=-W_a/2, y0=0, x1=W_a/2, y1=H_a,
+                  line=dict(color=BLUE, width=2.5),
+                  fillcolor='rgba(30,136,229,0.12)')
+
+    # Windshield area (after) — darker inset
+    ws_w = W_a * 0.72;  ws_h = H_a * 0.28;  ws_y = H_a * 0.56
+    fig.add_shape(type='rect', x0=-ws_w/2, y0=ws_y, x1=ws_w/2, y1=ws_y + ws_h,
+                  line=dict(color='#1565C0', width=1),
+                  fillcolor='rgba(13,17,23,0.55)')
+
+    # Wheels (after) — two circles at the bottom
+    for wx in (-W_a * 0.28, W_a * 0.28):
+        cx, cy = _circle(wx, gc, wheel_r)
+        fig.add_trace(go.Scatter(
+            x=cx, y=cy, fill='toself', fillcolor='#2d333b',
+            line=dict(color=GREY, width=1.2),
+            mode='lines', hoverinfo='skip', showlegend=False,
+        ))
+
+    # ΔW: horizontal bracket at the top
+    if 'width_mm' in delta:
+        _, _, d = delta['width_mm']
+        col, sign = (GREEN, '') if d < 0 else (AMBER, '+')
+        y_br = H_max * 1.06
+        # show old W as dashed horizontal line
+        fig.add_shape(type='line', x0=-W_b/2, y0=y_br, x1=W_b/2, y1=y_br,
+                      line=dict(color=col, width=2, dash='dashdot'))
+        # arrow to new W edge
+        fig.add_annotation(
+            x=W_a/2, y=y_br, ax=W_b/2, ay=y_br,
+            xref='x', yref='y', axref='x', ayref='y',
+            text='', showarrow=True,
+            arrowhead=3, arrowcolor=col, arrowwidth=2.5, arrowsize=0.9,
+        )
+        fig.add_annotation(x=0, y=y_br + H_max * 0.06,
+                           text=f"ΔW {sign}{d:.0f} mm", showarrow=False,
+                           font=dict(color=col, size=11),
+                           bgcolor='rgba(13,17,23,0.88)')
+
+    # ΔH: vertical bracket on the right
+    if 'height_mm' in delta:
+        _, _, d = delta['height_mm']
+        col, sign = (GREEN, '') if d < 0 else (AMBER, '+')
+        x_br = W_max * 0.58
+        # old H dashed line
+        fig.add_shape(type='line', x0=x_br, y0=0, x1=x_br, y1=H_b,
+                      line=dict(color=col, width=2, dash='dashdot'))
+        fig.add_shape(type='line', x0=x_br - W_max*0.025, y0=H_b,
+                      x1=x_br + W_max*0.025, y1=H_b,
+                      line=dict(color=col, width=2))
+        fig.add_annotation(
+            x=x_br, y=H_a, ax=x_br, ay=H_b,
+            xref='x', yref='y', axref='x', ayref='y',
+            text='', showarrow=True,
+            arrowhead=3, arrowcolor=col, arrowwidth=2.5, arrowsize=0.9,
+        )
+        fig.add_annotation(x=x_br + W_max * 0.07, y=(H_a + H_b) / 2,
+                           text=f"ΔH {sign}{d:.0f} mm", showarrow=False, textangle=-90,
+                           font=dict(color=col, size=11),
+                           bgcolor='rgba(13,17,23,0.88)')
+
+    fig.update_layout(
+        template='plotly_dark', paper_bgcolor=BG, plot_bgcolor=BG,
+        xaxis=dict(visible=False, range=[-W_max * 0.72, W_max * 0.80]),
+        yaxis=dict(visible=False, scaleanchor='x', scaleratio=1,
+                   range=[-wheel_r * 1.2, H_max * 1.28]),
+        margin=dict(l=5, r=5, t=5, b=5),
+        height=height, showlegend=False,
     )
     return fig
 
@@ -554,15 +648,147 @@ def draw_car_iso(params: dict) -> go.Figure:
     return fig
 
 
-def cd_gauge(cd_value: float, cd_min: float = 0.15, cd_max: float = 0.50) -> go.Figure:
-    """Semi-circular Plotly Indicator gauge for Cd."""
+def draw_car_iso_comparison(
+    before: dict,
+    after: dict,
+    delta: dict,
+    height: int = 300,
+) -> go.Figure:
+    """
+    3D isometric view: solid blue = after design, grey ghost = before.
+    Changed dimensions get a bright dashed old-value line + arrow + Δ label.
+    Axes are tight around the actual car so the car fills the figure.
+    """
+    L   = float(after['ref_length_mm'])
+    H_a = float(after['height_mm'])
+    H_b = float(before['height_mm'])
+    W_a = float(after['width_mm'])
+    W_b = float(before['width_mm'])
+    x_a = 0.42 * L
+    scale = 0.28
+    cos30 = np.cos(np.radians(30))
+    sin30 = np.sin(np.radians(30))
+    dx_a  = W_a * scale * cos30
+    dy_a  = W_a * scale * sin30
+    dx_b  = W_b * scale * cos30
+    dy_b  = W_b * scale * sin30
+
+    H_max  = max(H_a, H_b)
+    dy_max = max(dy_a, dy_b)
+
+    # ── Ghost (before) — cyan dashed, renders behind the after-car ───────────
+    _BEFORE_CLR = '#26C6DA'   # cyan — clearly distinct from after-car blue
+    xs_b, ys_b = side_profile_coords(before)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=xs_b, y=ys_b,
+        fill='toself', fillcolor='rgba(38,198,218,0.07)',
+        line=dict(color=_BEFORE_CLR, width=2.2, dash='dash'),
+        mode='lines', name='Before', hoverinfo='skip',
+    ))
+
+    # ── After car traces + base layout (fixed range overridden below) ─────────
+    after_fig = draw_car_iso(after)
+    for trace in after_fig.data:
+        fig.add_trace(trace)
+    fig.update_layout(after_fig.layout)
+
+    # ── ΔH: bold dashed old-H line + arrow showing change direction ──────────
+    if 'height_mm' in delta:
+        _, _, d = delta['height_mm']
+        col  = GREEN if d < 0 else AMBER
+        sign = '+' if d > 0 else ''
+        x_arr = L + L * 0.030
+
+        # dashed line at old H — thick, coloured
+        fig.add_shape(type='line', x0=x_arr, y0=0, x1=x_arr, y1=H_b,
+                      line=dict(color=col, width=2.5, dash='dashdot'))
+        # end-tick at old H
+        tk = L * 0.009
+        fig.add_shape(type='line',
+                      x0=x_arr - tk, y0=H_b, x1=x_arr + tk, y1=H_b,
+                      line=dict(color=col, width=2.5))
+        # arrow from old H level to new H level
+        fig.add_annotation(
+            x=x_arr, y=H_a,
+            ax=x_arr, ay=H_b,
+            xref='x', yref='y', axref='x', ayref='y',
+            text='', showarrow=True,
+            arrowhead=3, arrowcolor=col, arrowwidth=2.5, arrowsize=1.0,
+        )
+        # Δ label beside the arrow
+        fig.add_annotation(
+            x=x_arr + L * 0.045, y=(H_a + H_b) / 2,
+            text=f"ΔH {sign}{d:.0f} mm", showarrow=False, textangle=-90,
+            font=dict(color=col, size=11, family='monospace'),
+            bgcolor='rgba(13,17,23,0.90)',
+        )
+
+    # ── ΔW: bold dashed old-W diagonal + arrow ───────────────────────────────
+    if 'width_mm' in delta:
+        _, _, d = delta['width_mm']
+        col  = GREEN if d < 0 else AMBER
+        sign = '+' if d > 0 else ''
+
+        # dashed line at old W
+        fig.add_shape(type='line',
+                      x0=x_a, y0=H_a, x1=x_a + dx_b, y1=H_a + dy_b,
+                      line=dict(color=col, width=2.5, dash='dashdot'))
+        # arrow from old W tip to new W tip
+        fig.add_annotation(
+            x=x_a + dx_a, y=H_a + dy_a,
+            ax=x_a + dx_b, ay=H_a + dy_b,
+            xref='x', yref='y', axref='x', ayref='y',
+            text='', showarrow=True,
+            arrowhead=3, arrowcolor=col, arrowwidth=2.5, arrowsize=1.0,
+        )
+        # Δ label above midpoint
+        mx = x_a + (dx_a + dx_b) * 0.5 / 2
+        my = H_a + (dy_a + dy_b) * 0.5 / 2 + H_a * 0.09
+        fig.add_annotation(
+            x=mx, y=my,
+            text=f"ΔW {sign}{d:.0f} mm", showarrow=False,
+            font=dict(color=col, size=11, family='monospace'),
+            bgcolor='rgba(13,17,23,0.90)',
+        )
+
+    # ── Tight axis range — car fills the figure ───────────────────────────────
+    x_arr_pos = L + L * 0.030
+    x_label_end = x_arr_pos + L * 0.055   # room for H label + Δ label
+    x_right = x_label_end + max(dx_a, dx_b) + L * 0.02
+    y_top   = H_max + dy_max + H_max * 0.18
+    y_bot   = -H_max * 0.12
+
+    fig.update_layout(
+        xaxis=dict(visible=False, range=[-L * 0.03, x_right]),
+        yaxis=dict(visible=False, range=[y_bot, y_top]),
+        height=height,
+    )
+    return fig
+
+
+def cd_gauge(
+    cd_value: float,
+    target_cd: float = None,
+    cd_min: float = 0.15,
+    cd_max: float = 0.50,
+    height: int = 185,
+) -> go.Figure:
+    """
+    Semi-circular Plotly Indicator gauge for Cd.
+    When target_cd is given, the amber threshold line shows target; blue bar shows achieved.
+    """
+    cd_value = round(cd_value, 4)
+    threshold_val = target_cd if target_cd is not None else cd_value
+    threshold_color = AMBER if target_cd is not None else BLUE
+
     fig = go.Figure(go.Indicator(
         mode='gauge+number',
         value=cd_value,
         number=dict(
-            suffix='',
+            prefix='Cd: ',
             valueformat='.4f',
-            font=dict(size=26, color=WHITE),
+            font=dict(size=20, color=WHITE),
         ),
         gauge=dict(
             axis=dict(
@@ -581,21 +807,85 @@ def cd_gauge(cd_value: float, cd_min: float = 0.15, cd_max: float = 0.50) -> go.
                 dict(range=[0.35, cd_max], color='rgba(229,57,53,0.18)'),
             ],
             threshold=dict(
-                line=dict(color=AMBER, width=3),
-                thickness=0.75,
-                value=cd_value,
+                line=dict(color=threshold_color, width=3),
+                thickness=0.82,
+                value=threshold_val,
             ),
         ),
         title=dict(
-            text='C<sub>d</sub>',
-            font=dict(color=GREY, size=13),
+            text='Drag Coefficient',
+            font=dict(color=GREY, size=10),
+        ),
+    ))
+
+    # Legend strip when both values are shown
+    if target_cd is not None:
+        fig.add_annotation(
+            x=0.5, y=-0.10, xref='paper', yref='paper',
+            text=(f'<span style="color:{BLUE}">▬ Achieved {cd_value:.4f}</span>'
+                  f'   <span style="color:{AMBER}">| Target {target_cd:.3f}</span>'),
+            showarrow=False,
+            font=dict(size=9),
+            align='center',
+        )
+
+    fig.update_layout(
+        paper_bgcolor=BG,
+        font=dict(color=WHITE),
+        height=height,
+        margin=dict(l=10, r=10, t=35, b=35 if target_cd else 8),
+    )
+    return fig
+
+
+def cl_gauge(
+    cl_value: float,
+    cl_min: float = -0.30,
+    cl_max: float = 0.50,
+    height: int = 185,
+) -> go.Figure:
+    """Small semi-circular gauge for lift coefficient Cl."""
+    cl_value = round(cl_value, 4)
+    col = GREEN if cl_value <= 0 else AMBER
+    fig = go.Figure(go.Indicator(
+        mode='gauge+number',
+        value=cl_value,
+        number=dict(
+            prefix='Cl: ',
+            valueformat='.4f',
+            font=dict(size=18, color=col),
+        ),
+        gauge=dict(
+            axis=dict(
+                range=[cl_min, cl_max],
+                tickwidth=1,
+                tickcolor=GREY,
+                tickfont=dict(color=GREY, size=8),
+                nticks=5,
+            ),
+            bar=dict(color=col, thickness=0.22),
+            bgcolor=PANEL,
+            borderwidth=0,
+            steps=[
+                dict(range=[cl_min, 0],      color='rgba(67,160,71,0.20)'),
+                dict(range=[0, cl_max],      color='rgba(255,143,0,0.15)'),
+            ],
+            threshold=dict(
+                line=dict(color=WHITE, width=2),
+                thickness=0.70,
+                value=0,
+            ),
+        ),
+        title=dict(
+            text='C<sub>l</sub>  ' + ('↓ Downforce' if cl_value <= 0 else '↑ Lift'),
+            font=dict(color=col, size=10),
         ),
     ))
     fig.update_layout(
         paper_bgcolor=BG,
         font=dict(color=WHITE),
-        height=185,
-        margin=dict(l=10, r=10, t=30, b=5),
+        height=height,
+        margin=dict(l=8, r=8, t=25, b=5),
     )
     return fig
 
