@@ -767,6 +767,14 @@ def draw_car_iso_comparison(
     return fig
 
 
+def _cd_zone_color(cd: float) -> str:
+    if cd < 0.25:
+        return GREEN
+    if cd < 0.35:
+        return AMBER
+    return RED
+
+
 def cd_gauge(
     cd_value: float,
     target_cd: float = None,
@@ -781,14 +789,16 @@ def cd_gauge(
     cd_value = round(cd_value, 4)
     threshold_val = target_cd if target_cd is not None else cd_value
     threshold_color = AMBER if target_cd is not None else BLUE
+    val_color = _cd_zone_color(cd_value)
 
     fig = go.Figure(go.Indicator(
         mode='gauge+number',
         value=cd_value,
+        domain=dict(x=[0.05, 0.95], y=[0, 1]),
         number=dict(
             prefix='Cd: ',
             valueformat='.4f',
-            font=dict(size=20, color=WHITE),
+            font=dict(size=20, color=val_color),
         ),
         gauge=dict(
             axis=dict(
@@ -796,9 +806,10 @@ def cd_gauge(
                 tickwidth=1,
                 tickcolor=GREY,
                 tickfont=dict(color=GREY, size=9),
-                nticks=6,
+                tickvals=[0.15, 0.25, 0.35, 0.50],
+                ticktext=['0.15', '0.25', '0.35', '0.50'],
             ),
-            bar=dict(color=BLUE, thickness=0.22),
+            bar=dict(color=val_color, thickness=0.22),
             bgcolor=PANEL,
             borderwidth=0,
             steps=[
@@ -833,9 +844,17 @@ def cd_gauge(
         paper_bgcolor=BG,
         font=dict(color=WHITE),
         height=height,
-        margin=dict(l=10, r=10, t=35, b=35 if target_cd else 8),
+        margin=dict(l=30, r=30, t=35, b=35 if target_cd else 8),
     )
     return fig
+
+
+def _cl_zone_color(cl: float) -> str:
+    if cl <= 0.05:
+        return GREEN
+    if cl <= 0.20:
+        return AMBER
+    return RED
 
 
 def cl_gauge(
@@ -846,14 +865,15 @@ def cl_gauge(
 ) -> go.Figure:
     """Small semi-circular gauge for lift coefficient Cl."""
     cl_value = round(cl_value, 4)
-    col = GREEN if cl_value <= 0 else AMBER
+    val_color = _cl_zone_color(cl_value)
     fig = go.Figure(go.Indicator(
         mode='gauge+number',
         value=cl_value,
+        domain=dict(x=[0.05, 0.95], y=[0, 1]),
         number=dict(
             prefix='Cl: ',
             valueformat='.4f',
-            font=dict(size=18, color=col),
+            font=dict(size=18, color=val_color),
         ),
         gauge=dict(
             axis=dict(
@@ -861,14 +881,16 @@ def cl_gauge(
                 tickwidth=1,
                 tickcolor=GREY,
                 tickfont=dict(color=GREY, size=8),
-                nticks=5,
+                tickvals=[-0.30, 0.0, 0.05, 0.20, 0.50],
+                ticktext=['-0.30', '0.0', '0.05', '0.20', '0.50'],
             ),
-            bar=dict(color=col, thickness=0.22),
+            bar=dict(color=val_color, thickness=0.22),
             bgcolor=PANEL,
             borderwidth=0,
             steps=[
-                dict(range=[cl_min, 0],      color='rgba(67,160,71,0.20)'),
-                dict(range=[0, cl_max],      color='rgba(255,143,0,0.15)'),
+                dict(range=[cl_min, 0.05], color='rgba(67,160,71,0.20)'),
+                dict(range=[0.05, 0.20],   color='rgba(255,143,0,0.15)'),
+                dict(range=[0.20, cl_max], color='rgba(229,57,53,0.15)'),
             ],
             threshold=dict(
                 line=dict(color=WHITE, width=2),
@@ -877,15 +899,15 @@ def cl_gauge(
             ),
         ),
         title=dict(
-            text='C<sub>l</sub>  ' + ('↓ Downforce' if cl_value <= 0 else '↑ Lift'),
-            font=dict(color=col, size=10),
+            text='Lift Coefficient  ' + ('↓ Downforce' if cl_value <= 0.05 else '↑ Lift'),
+            font=dict(color=val_color, size=10),
         ),
     ))
     fig.update_layout(
         paper_bgcolor=BG,
         font=dict(color=WHITE),
         height=height,
-        margin=dict(l=8, r=8, t=25, b=5),
+        margin=dict(l=30, r=30, t=25, b=5),
     )
     return fig
 
