@@ -12,8 +12,8 @@ build/
 # Data — too large for GitHub (486GB)
 data/
 
-# Model checkpoints — regenerate with train_unified.py
-checkpoints/
+# Model checkpoints — tracked for backup (57 MB, under GitHub 100 MB limit)
+# checkpoints/
 
 # OpenFOAM case outputs — generated at runtime
 openfoam/cases/*/log.*
