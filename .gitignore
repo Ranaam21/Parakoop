@@ -9,8 +9,12 @@ env/
 dist/
 build/
 
-# Data — too large for GitHub (486GB)
-data/
+# Data — large subdirectories excluded (486 GB); root CSVs and small files are tracked
+data/drivaernet/meshes/
+data/drivaernet/pressure/
+data/drivaernet/annotations/
+data/drivaernet/renderings/
+data/ahmedml/run_*/
 
 # Model checkpoints — tracked for backup (57 MB, under GitHub 100 MB limit)
 # checkpoints/
