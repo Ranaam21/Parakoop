@@ -1,0 +1,810 @@
+================================================================================
+PAPER 4 — RESEARCH SCOPE DOCUMENT ("ParaKoop")
+From Performance to Geometry: A Parametric-Koopman Inverse-Design Engine
+for Quantum-Ready Automotive Aerodynamics
+================================================================================
+Author: Amit Rana
+Date: Jun 2026
+Status: This is Paper 4 — new, standalone work (Paper 3 is the separate,
+        already-submitted ALD showerhead paper at /Users/amit21/Desktop/CFD/
+        cfd-ald-app). This document is a strengthened evolution of your draft
+        Paper3_Automotive_Koopman_HHL_Scope.txt (kept alongside it, unchanged,
+        for comparison — that draft's filename is a holdover from early
+        scoping; its CONTENT is this paper's first draft, not Paper 3's).
+        Internally below, "v1" = that original draft, "v2"/"this document" =
+        the strengthened plan. See Section 11 carry-forward table for the
+        full mapping between the two.
+
+--------------------------------------------------------------------------------
+WHAT CHANGED FROM v1 (ONE-LINE VERSION)
+--------------------------------------------------------------------------------
+v1: Validate Koopman/HHL on a self-generated cylinder wake (separate track),
+    then separately train a GNN to regress Cd/Cl on DrivAerNet++ and search
+    over it with a GA. The two tracks are linked by narrative ("unified claim").
+
+v2: Make the Koopman operator the surrogate's actual mechanism — parameterized
+    by structured geometry parameters theta (the same ones VICES already uses),
+    calibrated jointly on AhmedML (transient, multi-geometry, real dynamics)
+    and DrivAerNet++ (steady, large-scale, ground truth) — and run the whole
+    learned structure BACKWARD: given a target Cd/Cl/wake behaviour and the
+    physics guardrails, the system SUGGESTS novel, guaranteed-valid car body
+    geometries. Geometry becomes the output, not the input. HHL solves the
+    literal linear systems this operator produces, at search scale, for real
+    candidate cars — not a disconnected textbook flow.
+
+This is not a bigger version of the same plan — it is a different (stronger)
+claim: not "we can evaluate designs fast," but "we can suggest designs directly."
+
+--------------------------------------------------------------------------------
+1. ONE-LINE SUMMARY
+--------------------------------------------------------------------------------
+ParaKoop learns a geometry-conditioned ("parametric") Koopman operator A(theta)
+jointly from AhmedML's 500 transient Ahmed-body variants and DrivAerNet++'s
+8,000 steady car shapes, exposes Cd/Cl/wake-recirculation/condition-number as
+structural byproducts of that single learned linear system, solves it with HHL
+at search scale, and — using the VICES/Catalan CSG design space from Paper 1 —
+runs the whole differentiable chain backward to SUGGEST novel car-body
+topologies directly from desired performance and physical guardrails.
+
+--------------------------------------------------------------------------------
+1A. ARCHITECTURE FLOW DIAGRAM — ParaKoop END-TO-END
+--------------------------------------------------------------------------------
+The diagram below is the one-glance map of the whole pipeline: one structured
+representation (theta) feeds one learned operator (A(theta)); every reported
+quantity — Cd/Cl, wake structure, the HHL input system, and the suggested
+designs themselves — is read off that single object. Forward (evaluation) and
+inverse (design-suggestion) directions share the same differentiable chain,
+just run in opposite directions. Numbers in [brackets] are Methodology stage
+references (Section 6 / Scope §5.x).
+
+  TRAINING / CALIBRATION  (forward direction — learns theta -> A(theta))
+  ───────────────────────────────────────────────────────────────────────
+   AhmedML (500 transient,        DrivAerNet++ (8,000 steady,
+   multi-geometry Ahmed cases)    diverse production-car shapes)
+            │                                │
+            │   "geometry determines         │   "geometry determines
+            │    DYNAMICS"                   │    STEADY PERFORMANCE,
+            │                                │    at industrial scale"
+            └───────────────┬────────────────┘
+                            ▼
+        [theta] STRUCTURED GEOMETRY REPRESENTATION  (REUSE: VICES/Catalan,
+                geometry/vices/, geometry/grammar.py)         [Stage 1 / §5.1]
+        CSG tree: discrete topology (Catalan grammar) + continuous
+        dimensions (lengths, angles, curvatures)
+                            │
+                            ▼  encoder = MultiHeadMGN backbone (REUSE)
+        ┌──────────────────────────────────────────────────────────┐
+        │   theta  ──────────▶   A(theta)                          │
+        │           PARAMETRIC KOOPMAN OPERATOR  [Stages 2-3/§5.2-3]│
+        │   (the single learned object — geometry-conditioned,     │
+        │    NOT temporal; calibrated jointly on both datasets)    │
+        └──────────────────────────────────────────────────────────┘
+                            │
+              every quantity below is a STRUCTURAL READOUT of A(theta) — not
+              a separate network head — [Stage 4 / §5.4]
+                            │
+        ┌─────────────┬─────────────┬──────────────┬─────────────────┐
+        ▼             ▼             ▼              ▼                 ▼
+     Cd, Cl,     Modal/transient  WAKE RECIRC.   kappa(A(theta))   A(theta).x
+     L/D from    behaviour =     STRENGTH (new   = condition       = b(theta)
+     fixed point eigenvalues/    metric: bubble  number — TRIPLE   ─────┐
+     of A.x = b  vectors of A    size + shedding DUTY: flow regime /    │
+     [§5.3]      (Strouhal nos., mode energy     quantum-readiness/     │
+                 von Karman      [§5.4]          gradient-trust [§5.4]  │
+                 shedding)                                              │
+                 ── validated                                           │
+                 against published                                       │
+                 literature [§5.2] ◀── VALIDATION DEPENDENCY: certifies │
+                                       A(theta) is physically faithful, │
+                                       i.e. that what HHL solves below  │
+                                       is meaningful, not numerically   │
+                                       convenient nonsense  [§5.5, Q9]  │
+                                                                        ▼
+                                                    ┌────────────────────────┐
+                                                    │   HHL QUANTUM LINEAR   │
+                                                    │   SOLVER (Qiskit/      │
+                                                    │   PennyLane)  [§5.5]   │
+                                                    │  solves the LITERAL    │
+                                                    │  A(theta).x = b(theta) │
+                                                    │  for every shape —     │
+                                                    │  Ahmed, DrivAer, AND   │
+                                                    │  every novel candidate │
+                                                    │  reports kappa by      │
+                                                    │  shape family +        │
+                                                    │  theoretical speedup   │
+                                                    └────────────────────────┘
+
+  ═══════════════════════════════════════════════════════════════════════
+  INVERSE DESIGN  (backward direction — runs the SAME chain in reverse)
+  ═══════════════════════════════════════════════════════════════════════
+    INPUT: target Cd, L/D, wake-recirculation behaviour + guardrails
+    (Re, Ma, Eu ranges; Cd_range; L/D_range)                      [§5.9]
+                            │
+                            ▼
+        ┌──────────────────────────────────────────────────────────┐
+        │  STAGE A — Grammar-conditioned generation  [§5.6 / Stage 6a]│
+        │  generative model over the Catalan CSG grammar, conditioned │
+        │  on targets + guardrails + a NOVELTY term (reward grammar-  │
+        │  edit-distance from training shapes) → proposes DIVERSE,    │
+        │  syntactically-VALID candidate topologies (discrete part)   │
+        └──────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+        ┌──────────────────────────────────────────────────────────┐
+        │  STAGE B — Gradient-based refinement  [§5.6 / Stage 6b]    │
+        │  for each fixed topology, descend on                       │
+        │  ‖ predicted_performance(theta) − target ‖ + guardrail     │
+        │  penalty, reading predicted_performance off the SAME       │
+        │  differentiable theta → A(theta) → performance chain       │
+        │  (trustworthy precisely where kappa(A(theta)) is low —     │
+        │  the "gradient-refinement trust" role of kappa, §5.4)      │
+        └──────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+        ┌──────────────────────────────────────────────────────────┐
+        │  STRUCTURAL GUARDRAIL CHECK — hard reject & resample        │
+        │  (Re, Ma, Eu, Cd_range, L/D_range)            [§5.6c / §5.9]│
+        └──────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+        ┌──────────────────────────────────────────────────────────┐
+        │  VERIFICATION  [Stage 7 / §5.8, §5.10]                      │
+        │  • GA optimiser (REUSE track2_ga_optimizer.py) — now a      │
+        │    3-objective verifier/refiner: Cd, L/D, wake-recirc.      │
+        │  • ~3-5 OpenFOAM ground-truth runs on top novel candidates  │
+        │    (validation-only role — mirrors Paper 1's CFD_val_rank)  │
+        └──────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+              OUTPUT: SUGGESTED, GUARDRAIL-VALID, NOVEL CAR-BODY
+              GEOMETRIES — geometry as the unknown (Y), performance
+              target as the known (X) — the inversion the user asked for
+
+  Read top-to-bottom for "how do we evaluate a design," and bottom section
+  for "how do we go from a desired outcome to a suggested design" — the key
+  point the diagram makes visually is that BOTH directions reuse the exact
+  same theta / A(theta) / kappa machinery. Nothing forks.
+
+--------------------------------------------------------------------------------
+2. THE CORE ARGUMENT
+--------------------------------------------------------------------------------
+Problem (unchanged from v1 — this framing is sound):
+  - Automotive aerodynamic design is constrained by parametric tools (vary
+    spoiler angle, hood curvature, etc.) — same topology family every cycle
+  - Each CFD evaluation: 6-48 hours on HPC clusters
+  - Industry typically evaluates 10-50 designs per development cycle
+  - "Topology gap": entire families of shapes are never explored because no
+    tool searches topology space, only parameter space within one topology
+    (this is the same argument that drove Paper 1's ALD result)
+
+What v1 proposed, and the gap that motivated v2:
+  - v1 split the work into Track A (Koopman/HHL validated on a self-generated
+    cylinder wake — single geometry, transient) and Track B (CSG topology
+    search driven by a directly-trained Cd/Cl regressor on DrivAerNet++).
+  - The two tracks shared only a narrative "unified claim." A reviewer's
+    natural question — "what does Koopman actually do for the cars you are
+    optimising?" — had no mechanistic answer in v1. v1 was honest about this
+    (it explicitly frames the cylinder case as validation, not mechanism).
+  - Separately: v1's plan to train ONE Koopman operator on the cylinder and
+    rely on it (or a learned embedding) to generalise to thousands of very
+    different DrivAerNet car shapes runs into a structural problem — a
+    TEMPORAL Koopman operator (z_{t+1} = A z_t) has nothing to act on for
+    steady-state-only data, and asking one calibrated on a single laminar
+    flow to generalise to industrial car shapes is a large, unsupported leap.
+
+What v2 does instead (the ParaKoop architecture):
+  TRACK A is removed as a separate track. There is one architecture:
+
+  STEP 1 — Represent every car body as theta: a CSG tree over the
+           Catalan-enumerated topology grammar (discrete structure) plus
+           continuous CSG dimensions (lengths, angles, curvatures) — exactly
+           the VICES/Track-2 representation already built and validated in
+           Paper 1 (geometry/vices/, geometry/grammar.py).
+
+  STEP 2 — Learn theta -> A(theta): a PARAMETRIC (not temporal) Koopman
+           operator that is a function of these structured geometry
+           parameters. Calibrate it on AhmedML's 500 transient, multi-
+           geometry Ahmed-body cases (real dynamics across real geometric
+           variation), and extend its fixed-point/spectral behaviour across
+           DrivAerNet++'s 8,000 steady shapes (industrial scale + ground
+           truth). This directly resolves the temporal/steady mismatch:
+           the object being learned is the GEOMETRY-TO-OPERATOR map, not a
+           single flow's time-evolution generalised by analogy.
+
+  STEP 3 — Read performance off A(theta) as STRUCTURAL byproducts, not
+           separate network heads:
+             * Steady Cd, Cl, fields = fixed point of A(theta).x = b(theta)
+               -> literally the linear system HHL solves (not an analogy)
+             * Transient/modal behaviour (von Karman shedding, Strouhal
+               numbers, bubble pumping) = eigenvalues/eigenvectors of A(theta)
+             * Wake recirculation strength = a NEW metric: steady
+               recirculation-bubble size (from the fixed-point field) plus
+               unsteady shedding-mode energy (from A(theta)'s spectrum) —
+               something no scalar Cd/Cl surrogate can expose
+             * kappa(A(theta)) = condition number — does triple duty (see
+               Section 5, "kappa's three roles")
+
+  STEP 4 — Solve A(theta).x = b(theta) with HHL (Qiskit/PennyLane) for every
+           shape evaluated — Ahmed cases, DrivAerNet cases, AND every novel
+           candidate the search/suggestion loop produces. Report kappa,
+           theoretical O(kappa^2 log N) speedup, and how kappa varies across
+           shape families — a genuine, dataset-scale empirical finding.
+
+  STEP 5 — INVERSE DESIGN (the headline capability): because
+           theta -> A(theta) -> performance is a differentiable chain over a
+           structured, finite, already-validated design space, run it
+           BACKWARD. Specify target Cd, L/D, wake-recirculation behaviour,
+           and guardrails; get suggested geometries — via a hybrid of
+           grammar-conditioned generation (propose diverse, valid, novel
+           topologies) and gradient-based refinement (tune continuous
+           parameters precisely toward the target). See Section 5.6.
+
+  STEP 6 — Verify: the existing GA optimiser (track2_ga_optimizer.py) checks
+           and polishes the suggestion shortlist (now a 3-objective search:
+           Cd, L/D, wake-recirculation strength); a small set of OpenFOAM
+           ground-truth runs (~3-5 cases, mirroring Paper 1's CFD_val_rank
+           validation) confirms the pipeline's predictions hold on genuinely
+           novel shapes that exist in neither source dataset.
+
+  UNIFIED CLAIM (v2, mechanistic — not narrative):
+    "A single learned operator — parameterised by the same structured
+    geometry representation used to search the design space — IS the
+    surrogate, IS the quantum-solver's input, and IS the mechanism that lets
+    us run design backward from target performance to suggested geometry.
+    Koopman is not validated separately and then narratively linked to the
+    rest; it is the rest."
+
+Usability statement (kept from v1, still strong):
+  "A 1% reduction in drag coefficient saves approximately $1 billion annually
+  in global automotive fuel costs. ParaKoop does not just evaluate candidate
+  topologies faster than classical CFD — it suggests them directly from a
+  desired performance target, while guaranteeing every suggestion is
+  physically valid and constructible."
+
+--------------------------------------------------------------------------------
+3. DATASETS — TWO REAL PUBLIC DATASETS + GENERATED NOVEL TOPOLOGIES
+--------------------------------------------------------------------------------
+v1 proposed generating a small (~10-20 case) bridging transient dataset because
+DrivAerNet++ alone cannot teach a model how geometry maps to DYNAMICS (it has
+no time series). v2 replaces that self-generation plan with a dataset that
+already exists, is free, and is two orders of magnitude larger:
+
+DATASET A — AhmedML (replaces v1's self-generated cylinder wake + bridging set)
+  Source:      Ashton et al. 2024, arXiv:2407.20801, CC-BY-SA (free download)
+               Paper:        https://arxiv.org/abs/2407.20801
+               Dataset site: https://neilashton.github.io/caemldatasets/ahmedml/
+  Content:     500 geometric variants of the Ahmed body, each run TRANSIENTLY
+               with a high-fidelity hybrid RANS-LES approach in OpenFOAM,
+               ~80 convective time units per case, ~20M-cell meshes
+  Why it matters: this is the multi-geometry + time-resolved combination that
+               makes learning theta -> A(theta) possible at all. A single
+               cylinder case (v1's plan) is structurally incapable of teaching
+               geometry-conditioning — you cannot learn how an operator varies
+               with geometry by observing only one geometry. AhmedML gives
+               500 (geometry, dynamics) pairs, ready-made, for free.
+  Role:        Calibrates theta -> A(theta) with REAL dynamics; validates
+               extracted modal frequencies/Strouhal numbers against the
+               dataset's own published flow physics and the wider Ahmed-body
+               DMD literature (bubble pumping St ~ 0.07, shedding St ~ 0.13-0.17)
+
+DATASET B — DrivAerNet++ (kept from v1, role sharpened)
+  Institution: MIT; Paper: NeurIPS 2024 (arXiv 2406.09624)
+  Size:        8,000 car body geometries + RANS CFD (~39 TB total)
+  Flow type:   Steady-state RANS, k-omega SST, Re ~ 3-5 million
+  Fields:      3D velocity, pressure, wall shear stress, Cd, Cl
+  Role:        Supplies geometric SCALE and DIVERSITY (full production car
+               families — fastback/notchback/estateback) that AhmedML's 500
+               Ahmed-family shapes cannot; anchors the steady/fixed-point
+               side of theta -> A(theta) against industrial-scale ground truth;
+               supplies the topology-search baseline to beat
+  NOT suitable for: learning dynamics (no time series — confirmed, as in v1)
+  IS suitable for:  scale, diversity, Cd/Cl ground truth, baseline benchmark
+
+HOW THE TWO COMBINE (the methodological crux of v2):
+  AhmedML teaches the model HOW GEOMETRY DETERMINES DYNAMICS (many geometries
+  x time series, but one shape family). DrivAerNet++ teaches the model HOW
+  GEOMETRY DETERMINES STEADY PERFORMANCE at industrial scale and diversity
+  (many more, more realistic geometries, but only steady snapshots). Training
+  one parametric operator A(theta) jointly across both fuses dynamics-richness
+  with geometry-richness — to our knowledge a new way to combine exactly these
+  two dataset TYPES, turning what looks like "two datasets that don't fit
+  together" into complementary halves of one training signal.
+
+DATASET C — Novel topologies (generated via VICES/Catalan, not downloaded)
+  Source:      Track 2's CSG/SDF engine from Paper 1 (geometry/vices/:
+               csg.py, primitives.py, variants.py, voxelizer.py; topology
+               grammar in geometry/grammar.py), extended with automotive
+               primitives (CarBody, Spoiler, Diffuser, WheelArch)
+  Role:        Defines the candidate space the inverse-design engine searches
+               and the GA verifies — shapes in NEITHER AhmedML nor
+               DrivAerNet++. This is where "leverage the previous geometry
+               work" lands centrally, not as an afterthought: VICES/Catalan
+               is simultaneously (a) the structured parameter space theta
+               that A is conditioned on, and (b) the guaranteed-valid OUTPUT
+               representation the inverse model decodes into (see Sec 5.6)
+
+OPTIONAL — Cylinder wake Re=100 (kept from v1 as a cheap sanity check only)
+  Cheap (30-60 min), textbook EDMD validation that the machinery extracts the
+  expected unit-circle eigenvalues before trusting it on Ahmed/DrivAer shapes.
+  Arguably unnecessary now that AhmedML covers the same need at vastly greater
+  scale and realism — keep only if you want an extra "reviewers will recognise
+  this" anchor.
+
+--------------------------------------------------------------------------------
+4. WHY THIS DATASET STRATEGY IS STRONGER THAN v1's
+--------------------------------------------------------------------------------
+v1's two-dataset structure was honest and well-reasoned, but the cylinder-wake
+half was: (a) self-generated (cost, time, infrastructure burden), (b) a SINGLE
+geometry (cannot teach geometry-conditioning, by construction), and (c) only
+narratively connected to the DrivAerNet half.
+
+v2's structure replaces all three weaknesses with strengths:
+  (a) AhmedML is free, public, and already exists — zero generation cost/risk
+  (b) 500 distinct geometries x full transient time series — exactly the
+      training signal a geometry-CONDITIONED operator requires
+  (c) AhmedML and DrivAerNet++ are fused into ONE operator, not two narratively
+      linked tracks — the connection is mechanistic (same A, same theta, same
+      fixed-point/spectral readout) not rhetorical
+
+  The unified narrative becomes literal instead of aspirational:
+    "We learn one geometry-conditioned linear operator from real transient
+    data on 500 shapes and real steady data on 8,000 shapes; every quantity
+    we report — Cd, Cl, wake structure, quantum-solvability, and the
+    suggested designs themselves — is a structural readout of that one object."
+
+--------------------------------------------------------------------------------
+5. TECHNICAL COMPONENTS
+--------------------------------------------------------------------------------
+
+5.1 Structured Geometry Representation — theta (REUSE — geometry/vices/, grammar.py)
+  - CSG tree over Catalan-enumerated topology grammar (discrete: which
+    primitives, which boolean ops, what arrangement) + continuous CSG
+    dimensions (lengths, angles, curvatures)
+  - Automotive primitives (NEW, small — 2-3 days, as v1 scoped):
+      CarBody(length, width, height, roof_curve), Spoiler(height, angle),
+      Diffuser(angle, length), WheelArch(x, y, radius)
+  - This single representation theta is (a) what A is conditioned on, AND
+    (b) the guaranteed-valid output space the inverse model decodes into —
+    serving double duty (see 5.6)
+
+5.2 Parametric Koopman Calibration on AhmedML (NEW — the architectural core)
+  - Encoder: MultiHeadMGN backbone (reused from Paper 1 / app.py) maps
+    theta -> latent geometry representation
+  - Koopman head: learned map theta -> (A(theta), b(theta), lifting functions
+    phi), trained on AhmedML's 500 cases via a fixed-point loss:
+    A(theta).phi(x_mean) ~= phi(x_mean) + b(theta) in the lifted observable
+    space, where phi(x_mean) is the sampled mean-flow field at fixed probe
+    locations (3,456 probes × 4 fields = 13,824-dim observable vector)
+  - Library: PyDMD-compatible formulation (as v1 scoped for its EDMD step)
+
+  DATA FORMAT CLARIFICATION (confirmed during development):
+    AhmedML stores TIME-AVERAGED mean fields (UMean, pMean, vorticityMean)
+    averaged over ~80 convective time units of hybrid RANS-LES. Individual
+    time snapshots are NOT stored in the public dataset (too large). This
+    means the 500 runs provide 500 (theta, phi_mean) pairs — geometry to
+    mean-flow-observable — not a time series for any single geometry.
+    This is fully compatible with the PARAMETRIC Koopman formulation
+    (learning theta → A(theta) across geometries) but means the training
+    loss is a fixed-point/steady-state residual, not a temporal EDMD step.
+
+  STROUHAL VALIDATION — METHOD AND CAVEAT (important for paper writing):
+    Because AhmedML does not provide individual time snapshots, Strouhal
+    numbers CANNOT be extracted via temporal FFT of the simulation data.
+    Validation is performed by TWO complementary methods instead:
+
+    Method A — Operator eigenvalue spectrum vs. published literature:
+      Once A(theta) is trained, its eigenvalues lambda_k are mapped to
+      non-dimensional frequencies via St = Im(lambda_k)*L / (2*pi*U_inf).
+      The resulting St values are compared against well-documented Ahmed-body
+      experimental and DNS literature: bubble pumping St ~ 0.07, vortex
+      shedding St ~ 0.13-0.17 (Grandemange et al. 2013, Evstafyeva et al.
+      2017). This validates that the learned operator's SPECTRAL STRUCTURE
+      captures real flow physics, without requiring time-series data from
+      this specific dataset.
+
+    Method B — Spatial vorticity patterns:
+      AhmedML's vorticityMean field contains the spatial signature of von
+      Karman structures (recirculation zone shape, vortex-core positions).
+      The Koopman operator's eigenvectors are compared against these spatial
+      patterns to confirm the learned modes correspond to known physical
+      structures (wake bubble, A-pillar vortices, trailing vortex pairs).
+
+    State explicitly in the paper (Methods §3.4 / Limitations):
+      "Strouhal validation uses eigenvalue-spectrum comparison against
+      published Ahmed-body literature rather than temporal-FFT extraction
+      from the training dataset, as AhmedML provides time-mean fields.
+      This is consistent with the parametric (not temporal) Koopman
+      formulation adopted here, and does not affect the HHL validation
+      dependency (§5.5) — see Design-Rationale Q9."
+
+  - Effort: ~1.5-2 weeks (replaces v1's separate "Koopman/EDMD on cylinder"
+    line item — same library, much richer calibration data)
+
+5.3 Steady-State Extension via DrivAerNet++ (NEW — completes the fusion)
+  - The SAME theta -> A(theta) map (now correctly understood as parametric,
+    not a temporally-generalised operator) is evaluated at DrivAerNet++'s
+    8,000 theta points
+  - Steady Cd, Cl, fields = fixed point of A(theta).x = b(theta), supervised
+    against DrivAerNet++ ground truth
+  - Target: OOF rho > 0.85 (Paper 1's reference benchmark used 123 shapes;
+    8,000 should clear this if the fusion works — v1's open question Q3)
+  - Effort: ~3-4 days on top of 5.2 (shares the same architecture/training
+    loop; this is "extend," not "retrain from scratch")
+
+5.4 Derived Metrics (NEW — structural byproducts of A(theta))
+  - Cd, Cl, L/D — from the fixed point
+  - WAKE RECIRCULATION STRENGTH — steady component (recirculation-bubble
+    size/strength from the fixed-point field x) + unsteady component
+    (shedding-mode energy/amplitude from A(theta)'s spectrum). Connects to:
+    base-pressure drag, EV battery thermal/cooling management (hot
+    recirculated air re-ingestion), cabin acoustics/buffeting, rear-end
+    soiling — a richer business story than Cd alone, and a quantity NO
+    scalar Cd/Cl surrogate can produce
+  - kappa(A(theta)) — condition number. THREE ROLES in one diagnostic:
+      (i)   flow-regime characterisation (laminar/simple -> low kappa;
+            complex/turbulent -> higher kappa)
+      (ii)  quantum-solvability / HHL speedup potential (kappa ~ 10-100
+            -> HHL shines; kappa >> 1000 -> advantage diminishes, as v1
+            already noted for turbulent flows)
+      (iii) NEWLY RECOGNISED: trustworthiness of gradient-based design
+            refinement (well-conditioned A means both "HHL helps" and "the
+            local performance landscape is smooth enough to trust gradient
+            descent" — see 5.6). One number, three engineering meanings —
+            a genuinely elegant unification worth foregrounding in the paper
+
+5.5 HHL Quantum Linear Solving (REUSE plan from v1, scope expanded)
+  - Library: Qiskit or PennyLane, run on the LITERAL A(theta).x = b(theta)
+    that the surrogate produces — for AhmedML cases, DrivAerNet cases, AND
+    every candidate the inverse-design loop generates (Section 5.6)
+  - Report: kappa(A(theta)) distributions BY SHAPE FAMILY (Ahmed vs. DrivAer
+    vs. novel suggestions), theoretical O(kappa^2 log N) speedup
+  - Honest caveat (kept from v1): classical simulation of HHL cannot
+    demonstrate actual speedup — report theoretically via kappa and N analysis
+  - This is what makes the Koopman -> HHL connection MECHANISTIC rather than
+    illustrative: HHL runs on real systems for real cars, at search scale —
+    not once, on one disconnected textbook flow
+  - VALIDATION DEPENDENCY (important — states explicitly what 5.2's Strouhal
+    check is FOR): kappa(A(theta)) and the theoretical speedup are only
+    meaningful to the extent A(theta) is itself a physically faithful
+    operator. That faithfulness is exactly what Section 5.2's Strouhal-number
+    validation establishes (extracted modal frequencies vs. literature). The
+    two validations are deliberately kept SEPARATE and serve different
+    purposes — Strouhal validation certifies the INPUT to HHL is physically
+    meaningful (a spectral/modal correctness check on A(theta) itself); kappa/
+    speedup analysis characterises HHL's BEHAVIOUR on that input (a numerical-
+    conditioning / quantum-readiness check). Put together: Strouhal validation
+    earns the right to trust the HHL results; kappa/speedup analysis is what
+    you report once that trust is earned. State this dependency explicitly in
+    the paper (Section 4.2/4.3) — it pre-empts the reviewer question "how do
+    you know the systems HHL is solving aren't garbage?" with a direct answer,
+    and it is what makes the Koopman -> HHL link auditable rather than assumed.
+
+5.6 Inverse Design — the Hybrid Mechanism (NEW — the headline capability)
+  Rather than a forward surrogate plus a GA that blindly samples and scores,
+  run theta -> A(theta) -> performance BACKWARD: specify targets, get
+  suggested geometries. Two-stage hybrid (chosen over pure-gradient or
+  pure-generative alternatives — see the companion Design-Rationale doc for
+  the full comparison):
+
+  STAGE A — Grammar-conditioned generation (handles DISCRETE structure)
+    - A generative model over the Catalan CSG-tree grammar, conditioned on
+      target performance (Cd, L/D, wake-recirculation strength) and guardrail
+      bounds, proposes diverse candidate topologies
+    - Grammar-constrained decoding GUARANTEES every sample is a syntactically
+      valid, constructible CSG tree (cannot produce nonsense geometry)
+    - NOVELTY TERM: reward topologies with large Catalan-grammar edit-distance
+      from anything in AhmedML/DrivAerNet++ (subject to guardrail
+      satisfaction) — operationalises "out-of-the-box," directly extending
+      Paper 1's "topology gap" argument into generation itself
+    - No new inverse-labelled data needed: trains on the SAME (geometry,
+      performance) pairs from AhmedML/DrivAerNet++/GA-search runs, just
+      conditioned in the reverse direction (standard conditional-generative
+      practice)
+
+  STAGE B — Gradient-based refinement (handles CONTINUOUS parameters)
+    - For each proposed topology (now a FIXED discrete structure), run
+      latent/test-time optimisation on the continuous CSG parameters:
+      descend on || predicted_performance(theta) - target || + guardrail
+      penalty, where predicted_performance is read off the differentiable
+      theta -> A(theta) chain
+    - This is where kappa(A(theta))'s third role (5.4.iii) matters: a
+      well-conditioned operator means the gradient signal can be trusted
+
+  GUARDRAIL ENFORCEMENT IS STRUCTURAL, NOT STATISTICAL
+    - Grammar-constrained decoding -> guaranteed syntactic validity
+    - Physical guardrails (Re, Ma, Eu ranges; Cd_range; L/D_range) -> hard
+      post-hoc check with REJECTION AND RESAMPLING for violations (not a
+      soft penalty a model could learn to ignore at the tails)
+
+  WHY THIS HYBRID (brief — full reasoning in the Design-Rationale doc):
+    pure gradient-based struggles with inherently discrete topology choice
+    (needs fragile relaxations) and tends toward local refinement (working
+    against "out-of-the-box"); pure grammar-generative is valid and diverse
+    but leaves the differentiable Koopman chain's gradient information
+    unused. The hybrid gets validity+diversity from the grammar side
+    (which you've already built and validated in Paper 1) and precision
+    from the gradient side (which the new architecture uniquely provides).
+
+5.7 Automotive VICES Geometry (REUSE + extend — 2-3 days, as v1 scoped)
+  - Reuse geometry/vices/ wholesale; add the four automotive primitives
+    listed in 5.1; Catalan characterisation carried over unchanged
+  - Now serves DOUBLE DUTY: structured conditioning space for A(theta) AND
+    guaranteed-valid output representation for inverse design (5.6)
+
+5.8 GA Optimiser — Now a Verifier/Refiner, Not the Primary Search (REUSE,
+    fitness expanded)
+  - Reuse optimization/track2_ga_optimizer.py largely unchanged
+  - Fitness EXPANDS from 2 objectives (Cd, L/D — v1's plan) to 3: add wake-
+    recirculation strength — a genuine multi-objective search over a
+    dimension NO existing automotive optimiser can even compute
+  - Role shifts from "primary search mechanism" (v1) to "verifier/refiner
+    around what the inverse model proposes" (v2) — checks and polishes the
+    suggestion shortlist before the small OpenFOAM validation round
+
+5.9 Physics Guardrails — Lighter Set Than ALD (REUSE + adapt — half day,
+    EXACTLY as v1 scoped in its section 5.7 — confirmed correct, unchanged)
+  - Keep only Re, Ma, Eu (3 flow-regime dimensionless numbers — Reynolds,
+    Mach, Euler — vs. ALD's full 11-group set)
+  - Add automotive output-range checks: Cd_range [0.1, 0.5], L/D_range [0-5]
+  - DROP all 8 ALD-specific chemical/thermal/species guardrails (Da, Sc, Pr,
+    Nu, Bi, Sh, Pe_h, Pe_m) — automotive aerodynamics has no reaction/
+    species/thermal regime to police
+  - Adapt physics/guardrails.py (GuardrailBounds) — minor, half-day change
+  - Enforced STRUCTURALLY in the inverse-design loop (5.6: hard check +
+    reject/resample), not merely as a soft training-time penalty
+
+5.10 OpenFOAM — Role Shifted from Generation to Validation-Only
+  v1 used OpenFOAM to GENERATE training data (cylinder wake + Docker
+  pipeline reuse). Because AhmedML and DrivAerNet++ now supply the
+  transient and steady training data respectively, OpenFOAM's footprint
+  shrinks substantially:
+    - ~3-5 ground-truth runs (mirroring Paper 1's CFD_val_rank{1,2,3} cases)
+      on the TOP novel suggested-and-refined topologies — geometries that
+      exist in NEITHER source dataset — confirming the pipeline's
+      predictions hold on genuinely new shapes, not just interpolations
+    - Optionally, the cheap cylinder-wake sanity case (Section 3, Dataset
+      "Optional")
+  This is a FEATURE, not a gap: a much smaller CFD infrastructure burden
+  than v1's plan, freeing effort for the architecture and inverse-design work.
+
+--------------------------------------------------------------------------------
+6. PROJECT FLOW
+--------------------------------------------------------------------------------
+  1. DEVELOPMENT — build and validate ParaKoop (Sections 5.1-5.10): train on
+     AhmedML + DrivAerNet++, validate against literature, run the
+     inverse-design loop, verify with GA + the small OpenFOAM ground-truth set
+  2. STREAMLIT UI — extend the existing dashboard (app.py) with an automotive
+     tab: interactive target-performance input -> suggested-geometry output.
+     (v1's section 9 already noted "Streamlit dashboard — DONE — add
+     automotive tab"; this is that tab, now doing inverse design, not just
+     displaying forward predictions.)
+  3. PAPER WRITING — close the work with a publication. The companion
+     Design-Rationale Q&A document (Paper4_ParaKoop_Design_Rationale_QA.md)
+     is a ready-made record of WHY each architectural choice was made over
+     its alternatives — material that maps directly onto Methods/Discussion/
+     Limitations sections, making this phase materially faster.
+
+--------------------------------------------------------------------------------
+7. PAPER STRUCTURE (UPDATED FROM v1's SECTION 6)
+--------------------------------------------------------------------------------
+Section 1 — Introduction
+  - Topology gap + automotive bottleneck (kept from v1)
+  - "This is not a PINN — we don't learn to solve PDEs, we learn a
+    geometry-conditioned linear operator and run it backward to suggest
+    geometries parametric tools cannot reach" (sharpened from v1's framing)
+
+Section 2 — Background
+  2.1 DrivAerNet++ and automotive CFD surrogates
+  2.2 AhmedML and transient bluff-body datasets (NEW)
+  2.3 Koopman operator theory — from temporal to PARAMETRIC formulations (NEW
+      emphasis — this is where the v1 -> v2 architectural shift is explained)
+  2.4 EDMD — extracting Koopman operators from data
+  2.5 HHL algorithm — quantum linear systems
+  2.6 Relationship to chaos theory (kept from v1's 2.5 — still genuine, novel
+      framing connecting to Lorenz/chaos literature)
+
+Section 3 — ParaKoop: A Parametric-Koopman Operator over Structured Geometry
+  3.1 theta: the VICES/Catalan structured parameter space
+  3.2 Learning theta -> A(theta) jointly from AhmedML + DrivAerNet++
+  3.3 Performance as structural byproducts: Cd/Cl, modal structure, wake
+      recirculation strength, kappa
+  3.4 Validation: modal frequencies/Strouhal vs. literature; Cd/Cl OOF rho
+
+Section 4 — Quantum Linear Solving at Scale
+  4.1 HHL on real A(theta).x = b(theta) systems (Ahmed, DrivAer, novel)
+  4.2 kappa distributions by shape family; theoretical speedup analysis
+  4.3 Honest limitations (classical HHL simulation, turbulent kappa)
+
+Section 5 — Inverse Design: From Target Performance to Suggested Geometry
+  5.1 The hybrid mechanism: grammar-conditioned generation + gradient refinement
+  5.2 Novelty term and the topology gap, operationalised in generation
+  5.3 Structural guardrail enforcement (generate-check-resample)
+  5.4 Results: suggested designs vs. best shapes in AhmedML and DrivAerNet++
+
+Section 6 — Verification
+  6.1 GA-based 3-objective verification/refinement
+  6.2 OpenFOAM ground-truth validation on novel suggested topologies
+  6.3 Topology gap quantified in the automotive domain
+
+Section 7 — Unified Framework: What One Operator Buys You
+  7.1 Surrogate, quantum-solver input, and inverse-design mechanism — one object
+  7.2 kappa's three roles: flow regime, quantum-readiness, refinement trust
+  7.3 Path to fault-tolerant quantum implementation
+
+Section 8 — Industry Use Cases (kept from v1)
+  - EV range extension (direct kWh/km calculation; wake-recirculation ->
+    thermal management connection, NEW)
+  - Motorsport (F1 downforce vs drag tradeoff)
+  - Heavy trucks (EU fuel efficiency regulations)
+  - Urban delivery (last-mile vehicle design)
+
+Section 9 — Conclusion
+  - Topology gap confirmed in automotive domain — and CLOSED DIRECTLY by a
+    suggestion engine, not just measured by a faster evaluator
+  - Koopman bridges chaos theory to quantum-solvable linear systems AND to
+    differentiable, invertible design
+  - HHL is the quantum algorithm that closes the computational gap
+
+--------------------------------------------------------------------------------
+8. NOVELTY CLAIMS (SHARPENED FROM v1)
+--------------------------------------------------------------------------------
+Primary:
+  1. First PARAMETRIC (geometry-conditioned, not temporally-generalised)
+     Koopman operator for aerodynamic surrogate modelling, calibrated jointly
+     across a transient multi-geometry dataset (AhmedML) and a large
+     steady-state dataset (DrivAerNet++) — a new way to fuse exactly these
+     two data types
+  2. First MECHANISTICALLY-INTEGRATED Koopman -> HHL pipeline at dataset
+     scale: the linear systems HHL solves are the literal outputs of the
+     surrogate for real candidate geometries — not an illustrative
+     side-study on a disconnected canonical flow (v1's structure)
+  3. First INVERSE-DESIGN ENGINE for automotive aerodynamics that outputs
+     geometry directly from target performance — a hybrid grammar-
+     conditioned-generation + gradient-refinement mechanism over a
+     Catalan/CSG space, with structurally-guaranteed validity and guardrail
+     compliance (vs. the field's standard forward-surrogate-plus-search loop)
+  4. Formal chain, now OPERATIONALISED rather than asserted: chaos theory ->
+     Koopman linearisation -> quantum linear solving -> differentiable,
+     invertible geometric design — a complete theoretical-to-practical chain
+
+Secondary:
+  5. WAKE RECIRCULATION STRENGTH as a first-class design objective — derivable
+     only from a model that predicts full transient wake fields and their
+     modal decomposition; connects to base-pressure drag, EV thermal
+     management, cabin acoustics, and soiling — dimensions no scalar Cd/Cl
+     optimiser can evaluate
+  6. kappa(A(theta)) as a UNIFYING DIAGNOSTIC — flow regime, quantum-
+     solvability, AND gradient-refinement trustworthiness in one number;
+     opens a new research question (how does topology affect Koopman-
+     operator conditioning, and hence both quantum-readiness and
+     design-search reliability?)
+  7. Cross-domain transfer of VICES + MultiHeadMGN + Catalan formalism
+     (ALD -> automotive), with the geometry-synthesis infrastructure now
+     serving DOUBLE DUTY as both output representation and conditioning
+     structure of the inverse-design mechanism
+  8. Bridges QuantumRAG (quantum Hilbert space) + Paper 1 (CSG CFD) — kept
+     from v1's framing, now strengthened: Koopman lifts automotive CFD into
+     Hilbert space, HHL solves it, and the SAME structure runs backward to
+     suggest designs — the same quantum linear algebra as QuantumRAG, now
+     doing double duty as a generative mechanism
+
+What this is NOT (kept from v1 — still the right positioning):
+  - NOT a PINN paper
+  - NOT a DrivAerNet accuracy improvement
+  - NOT a quantum hardware paper (HHL simulated classically)
+  - NOT building a new CFD solver
+
+--------------------------------------------------------------------------------
+9. TARGET JOURNALS (KEPT FROM v1 — STILL THE RIGHT LIST)
+--------------------------------------------------------------------------------
+Primary:   npj Computational Materials (Springer Nature)
+           IF 9.4 | Open access | Fast ~6-8 weeks
+           Note: APC applies — apply for independent researcher waiver
+
+Backup 1:  Aerospace Science and Technology (Elsevier)
+           IF 5.6 | Free to publish | Aerospace + computational methods
+
+Backup 2:  Computer Methods in Applied Mechanics and Engineering (Elsevier)
+           IF 6.9 | Free | CFD + ML + computational methods (strong fit)
+
+Backup 3:  npj Quantum Information (Springer Nature)
+           IF 6.6 | If quantum contribution is emphasised more
+
+--------------------------------------------------------------------------------
+10. EFFORT ESTIMATE (UPDATED FROM v1's SECTION 9)
+--------------------------------------------------------------------------------
+Reusable from Paper 1 (unchanged from v1's inventory):
+  Component                              Reuse status
+  ---------                              ------------
+  VICES CSG/SDF pipeline                 DONE — add automotive primitives only
+  Marching Cubes triangulation           DONE — no changes
+  MultiHeadMGN GNN architecture          DONE — becomes the encoder backbone
+  Genetic Algorithm optimiser            DONE — fitness expands 2 -> 3 objectives
+  Physics guardrail engine               DONE — minor adaptation (Sec 5.9)
+  OpenFOAM Docker pipeline               DONE — validation-only now (Sec 5.10)
+  Streamlit dashboard                    DONE — add automotive tab (Sec 6)
+  Paper framing (topology gap, PINN vs   DONE — reuse + sharpen Section 1.1
+  geometric, Catalan numbers)            argument
+
+New / changed components:
+  Component                                       Effort estimate
+  ---------                                       ---------------
+  AhmedML download + preprocessing                ~2-3 days (replaces v1's
+                                                   "self-generate cylinder wake"
+                                                   — net LOWER effort and risk)
+  Automotive VICES primitives                     2-3 days (unchanged from v1)
+  ParaKoop architecture: parametric Koopman head  ~2 weeks (replaces v1's
+  + joint AhmedML/DrivAerNet++ training (5.2-5.4) separate "Koopman/EDMD" +
+                                                   "GNN retraining" line items —
+                                                   one architecture, not two)
+  HHL simulation at search scale (5.5)            ~1 week (same library as v1;
+                                                   broader application — every
+                                                   candidate, not one case)
+  Inverse-design hybrid: grammar-conditioned      ~2 weeks (NEW — the
+  generation + gradient refinement (5.6)          architectural centrepiece;
+                                                   this is the net-new
+                                                   complexity v2 adds over v1)
+  Guardrail adaptation (5.9)                      half day (unchanged from v1)
+  GA fitness expansion to 3 objectives (5.8)      ~1 day
+  OpenFOAM validation runs (5.10)                 ~1 day (3-5 small runs;
+                                                   v1's plan needed a full
+                                                   case-generation effort here)
+  Streamlit automotive tab                        ~2-3 days
+  Paper writing (aided by Design-Rationale doc)   2-3 weeks
+
+Total new work: ~6-8 weeks part-time — comparable to v1's estimate, but
+redistributed AWAY from data generation (lower) and TOWARD the architecture
+and inverse-design mechanism (higher) — i.e., less infrastructure risk, more
+of the effort goes directly into the paper's core novel contribution.
+
+--------------------------------------------------------------------------------
+11. CARRY-FORWARD FROM v1 — WHAT STAYS, WHAT CHANGES
+--------------------------------------------------------------------------------
+| In v1 (Paper3_Automotive_Koopman_HHL_Scope.txt)        | In v2 (this document) |
+|--------------------------------------------------------|------------------------|
+| Business problem, "$1B/yr per 1% Cd," topology-gap     | KEPT — sound, sharpened|
+| argument, target journals, "what this is NOT" (S2,7,8) | around inverse design  |
+|--------------------------------------------------------|------------------------|
+| Two-dataset strategy: cylinder wake (Koopman           | REPLACED: AhmedML +    |
+| validation, single geometry, temporal) + DrivAerNet++  | DrivAerNet++ trained   |
+| (topology search), parallel tracks linked by narrative | JOINTLY into ONE       |
+| (S3, 5.1-5.3)                                          | parametric operator    |
+|--------------------------------------------------------|------------------------|
+| Koopman/EDMD as one-off analysis on cylinder; HHL run  | Koopman becomes the    |
+| once on that result; GNN trained to directly regress   | parametric mechanism   |
+| Cd/Cl (S5.2, 5.3, 5.5)                                 | itself; Cd/Cl/wake are |
+|                                                        | structural byproducts  |
+|--------------------------------------------------------|------------------------|
+| VICES automotive primitives (S5.4)                     | SAME — now double duty |
+|                                                        | (conditioning + output)|
+|--------------------------------------------------------|------------------------|
+| GA optimiser reused unchanged, 2-objective (S5.6)      | Reused, 3-objective,   |
+|                                                        | now verifier not search|
+|--------------------------------------------------------|------------------------|
+| Physics guardrails: Re, Ma, Eu + Cd/L-D ranges (S5.7)  | UNCHANGED — confirmed  |
+|                                                        | correct, lighter set   |
+|--------------------------------------------------------|------------------------|
+| OpenFOAM Docker pipeline for cylinder-wake gen (S5.1,9)| Validation-only now    |
+|--------------------------------------------------------|------------------------|
+| Open question Q2: DrivAerNet++ HDF5 format conversion  | STILL OPEN — unchanged |
+| Open question Q3: min. shapes for OOF rho > 0.85       | Addressed: DrivAerNet++|
+|                                                        | 8,000 >> Paper 1's 123 |
+
+--------------------------------------------------------------------------------
+12. DATASET DOWNLOAD LINKS
+--------------------------------------------------------------------------------
+AhmedML (NEW — the v2 centrepiece):
+  Paper:        https://arxiv.org/abs/2407.20801
+  Dataset site: https://neilashton.github.io/caemldatasets/ahmedml/
+
+DrivAerNet (original):   https://github.com/Mehtab08/DrivAerNet
+DrivAerNet++ (extended): https://www.aicrowd.com/challenges/drivaernet
+DrivAerNet++ paper:      https://arxiv.org/abs/2406.09624
+PyDMD library:           https://github.com/PyDMD/PyDMD
+Qiskit HHL:              https://learning.quantum.ibm.com/tutorial/solve-linear-systems-of-equations-using-hhl
+PennyLane QML:           https://pennylane.ai/qml/demonstrations
+
+================================================================================
+END OF v2 SCOPE DOCUMENT — see Paper4_ParaKoop_Design_Rationale_QA.md for the
+full reasoning behind each architectural decision summarised above
+================================================================================
